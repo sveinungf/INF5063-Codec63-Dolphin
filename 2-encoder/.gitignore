@@ -1,0 +1,15 @@
+# object files
+c63enc
+*.o
+.cproject
+.project
+
+gmon.out
+*.pyc
+
+# eclipse
+/.ptp-sync/
+.settings/
+.cproject
+.project
+.ptp-sync-folder

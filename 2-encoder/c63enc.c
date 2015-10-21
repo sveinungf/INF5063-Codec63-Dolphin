@@ -28,6 +28,11 @@ static uint32_t height;
 extern int optind;
 extern char *optarg;
 
+#define NO_FLAGS        0
+#define NO_CALLBACK     NULL
+
+sci_error_t error;
+
 /* Read planar YUV frames with 4:2:0 chroma sub-sampling */
 static yuv_t* read_yuv(FILE *file, struct c63_common *cm)
 {
@@ -225,6 +230,12 @@ int main(int argc, char **argv)
   {
     fprintf(stderr, "Error getting program options, try --help.\n");
     exit(EXIT_FAILURE);
+  }
+
+  SCIInitialize(NO_FLAGS, &error);
+  if (error != SCI_ERR_OK) {
+    fprintf(stderr,"SCIInitialize failed - Error code: 0x%x\n",error);
+    return(error);
   }
 
   outfile = fopen(output_file, "wb");

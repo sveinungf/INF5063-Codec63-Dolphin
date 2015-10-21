@@ -16,6 +16,7 @@ else
 endif
 
 CCFLAGS += -idirafter /opt/DIS/include
+LDFLAGS += -L /opt/DIS/lib64 -lsisci
 
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))

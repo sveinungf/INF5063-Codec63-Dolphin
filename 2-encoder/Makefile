@@ -15,6 +15,8 @@ else
 	CCFLAGS += -O3
 endif
 
+CCFLAGS += -idirafter /opt/DIS/include
+
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_NVCCFLAGS += $(addprefix -Xptxas ,$(PTXFLAGS))

@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "sisci_api.h"
+#include "sisci_error.h"
 
 #include "c63.h"
 #include "c63_write.h"

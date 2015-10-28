@@ -14,6 +14,42 @@
 #include "me.h"
 #include "tables.h"
 
+
+// SISCI variables
+static sci_desc_t vd;
+
+static unsigned int localAdapterNo;
+static unsigned int remoteNodeId;
+
+static unsigned int localSegmentId_Y;
+static unsigned int localSegmentId_U;
+static unsigned int localSegmentId_V;
+
+static sci_local_segment_t localSegment_Y;
+static sci_local_segment_t localSegment_U;
+static sci_local_segment_t localSegment_V;
+
+static unsigned int segmentSize_Y;
+static unsigned int segmentSize_U;
+static unsigned int segmentSize_V;
+
+static volatile uint8_t local_Y;
+static volatile uint8_t local_U;
+static volatile uint8_t local_V;
+
+static sci_map_t localMap_Y;
+static sci_map_t localMap_U;
+static sci_map_t localMap_V;
+
+sci_local_interrupt_t local_interrupt_data;
+sci_remote_interrupt_t remote_interrupt_data;
+/*
+sci_local_interrupt_t local_interrupt_Y;
+sci_local_interrupt_t local_interrupt_U;
+sci_local_interrupt_t local_interrupt_V;
+*/
+
+
 static char *output_file, *input_file;
 FILE *outfile;
 
@@ -26,56 +62,6 @@ static uint32_t height;
 extern int optind;
 extern char *optarg;
 
-/* Read planar YUV frames with 4:2:0 chroma sub-sampling */
-static yuv_t* read_yuv(FILE *file, struct c63_common *cm)
-{
-  size_t len = 0;
-  yuv_t *image = malloc(sizeof(*image));
-
-  /* Read Y. The size of Y is the same as the size of the image. The indices
-     represents the color component (0 is Y, 1 is U, and 2 is V) */
-  image->Y = calloc(1, cm->padw[Y_COMPONENT]*cm->padh[Y_COMPONENT]);
-  len += fread(image->Y, 1, width*height, file);
-
-  /* Read U. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y
-     because (height/2)*(width/2) = (height*width)/4. */
-  image->U = calloc(1, cm->padw[U_COMPONENT]*cm->padh[U_COMPONENT]);
-  len += fread(image->U, 1, (width*height)/4, file);
-
-  /* Read V. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y. */
-  image->V = calloc(1, cm->padw[V_COMPONENT]*cm->padh[V_COMPONENT]);
-  len += fread(image->V, 1, (width*height)/4, file);
-
-  if (ferror(file))
-  {
-    perror("ferror");
-    exit(EXIT_FAILURE);
-  }
-
-  if (feof(file))
-  {
-    free(image->Y);
-    free(image->U);
-    free(image->V);
-    free(image);
-
-    return NULL;
-  }
-  else if (len != width*height*1.5)
-  {
-    fprintf(stderr, "Reached end of file, but incorrect bytes read.\n");
-    fprintf(stderr, "Wrong input? (height: %d width: %d)\n", height, width);
-
-    free(image->Y);
-    free(image->U);
-    free(image->V);
-    free(image);
-
-    return NULL;
-  }
-
-  return image;
-}
 
 static void c63_encode_image(struct c63_common *cm, yuv_t *image)
 {
@@ -102,27 +88,6 @@ static void c63_encode_image(struct c63_common *cm, yuv_t *image)
     /* Motion Compensation */
     c63_motion_compensate(cm);
   }
-
-  /* DCT and Quantization */
-  dct_quantize(image->Y, cm->curframe->predicted->Y, cm->padw[Y_COMPONENT],
-      cm->padh[Y_COMPONENT], cm->curframe->residuals->Ydct,
-      cm->quanttbl[Y_COMPONENT]);
-
-  dct_quantize(image->U, cm->curframe->predicted->U, cm->padw[U_COMPONENT],
-      cm->padh[U_COMPONENT], cm->curframe->residuals->Udct,
-      cm->quanttbl[U_COMPONENT]);
-
-  dct_quantize(image->V, cm->curframe->predicted->V, cm->padw[V_COMPONENT],
-      cm->padh[V_COMPONENT], cm->curframe->residuals->Vdct,
-      cm->quanttbl[V_COMPONENT]);
-
-  /* Reconstruct frame for inter-prediction */
-  dequantize_idct(cm->curframe->residuals->Ydct, cm->curframe->predicted->Y,
-      cm->ypw, cm->yph, cm->curframe->recons->Y, cm->quanttbl[Y_COMPONENT]);
-  dequantize_idct(cm->curframe->residuals->Udct, cm->curframe->predicted->U,
-      cm->upw, cm->uph, cm->curframe->recons->U, cm->quanttbl[U_COMPONENT]);
-  dequantize_idct(cm->curframe->residuals->Vdct, cm->curframe->predicted->V,
-      cm->vpw, cm->vph, cm->curframe->recons->V, cm->quanttbl[V_COMPONENT]);
 
   /* Function dump_image(), found in common.c, can be used here to check if the
      prediction is correct */
@@ -170,6 +135,163 @@ struct c63_common* init_c63_enc(int width, int height)
 
   return cm;
 }
+
+
+static sci_error_t init_SISCI(struct c63_common *cm) {
+
+	// Initialisation of SISCI API
+	sci_error_t error;
+	SCIInitialize(NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	SCIOpen(&vd, NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	SCIGetLocalNodeId(localAdapterNo, &localNodeId, NO_FLAGS, &error);
+	if(error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	localSegmentId_Y = (localNodeId << 16) | remoteNodeId | Y_COMPONENT;
+	localSegmentId_U = (localNodeId << 16) | remoteNodeId | U_COMPONENT;
+	localSegmentId_V = (localNodeId << 16) | remoteNodeId | V_COMPONENT;
+
+	// Create local segments for the processing machine to copy into
+	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, cm->ypw*cm->yph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, cm->upw*cm->uph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, cm->vpw*cm->vph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	// Map the local segments
+	int offset = 0;
+	local_Y = SCIMapLocalSegment(localSegment_Y , &localMap_Y, offset, cm->ypw*cm->yph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	local_U = SCIMapLocalSegment(localSegment_U , &localMap_U, offset, cm->upw*cm->uph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+			return error;
+	}
+
+	local_V = SCIMapLocalSegment(localSegment_V , &localMap_V, offset, cm->vpw*cm->vph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+			return error;
+	}
+
+	// Make segments accessible from the network adapter
+	SCIPrepareSegment(localSegment_Y, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCIPrepareSegment(localSegment_U, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCIPrepareSegment(localSegment_V, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	// Make segments accessible from other nodes
+	SCISetSegmentAvailable(localSegment_Y, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCISetSegmentAvailable(localSegment_U, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	SCISetSegmentAvailable(localSegment_V, localAdapterNo, NO_FLAGS, &error);
+	if (error != SCI_ERROR_OK) {
+		return error;
+	}
+
+	// Create local interrupt descriptor(s) for communication between processing machine and writer machine
+	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		return error;
+	}
+
+	/*
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, NUll, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		return error;
+	}
+
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		return error;
+	}
+
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, NULL, NULL, NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		return error;
+	}
+	*/
+
+	/*
+	do {
+		SCIConnectInterrupt(vd, &remote_interrupt_Y, remoteNodeId, localAdapterNo, Y_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+	} while (error != SCI_ERROR_OK);
+
+	do {
+		SCIConnectInterrupt(vd, &remote_interrupt_U, remoteNodeId, localAdapterNo, U_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+	} while (error != SCI_ERROR_OK);
+
+	do {
+		SCIConnectInterrupt(vd, &remote_interrupt_V, remoteNodeId, localAdapterNo, V_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+	} while (error != SCI_ERROR_OK);
+	*/
+
+	// Connect reader node to remote interrupt at processing machine
+	do {
+		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+	} while (error != SCI_ERROR_OK);
+
+	return SCI_ERROR_OK;
+}
+
+static sci_error_t cleanup_SISCI() {
+	SCIRemoveInterrupt(local_interrupt_data, NO_FLAGS, &error);
+	SCIRemoveInterrupt(remote_interrupt_data, NO_FLAGS, &error);
+
+	SCIUnmapSegment(localMap_Y, NO_FLAGS, &error);
+	SCIUnmapSegment(localMap_U, NO_FLAGS, &error);
+	SCIUnmapSegment(localMap_V, NO_FLAGS, &error);
+
+	SCIRemoveSegment(localSegment_Y, NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment_U, NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment_V, NO_FLAGS, &error);
+
+	SCIClose(&vd, NO_FLAGS, &error);
+	SCITerminate();
+
+	return SCI_ERR_OK;
+}
+
 
 void free_c63_enc(struct c63_common* cm)
 {

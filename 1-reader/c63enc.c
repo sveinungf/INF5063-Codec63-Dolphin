@@ -31,13 +31,9 @@ static unsigned int segmentSize_Y;
 static unsigned int segmentSize_U;
 static unsigned int segmentSize_V;
 
-static void *localMapAddr_Y;
-static void *localMapAddr_U;
-static void *localMapAddr_V;
-
-static sci_map_t localMap_Y;
-static sci_map_t localMap_U;
-static sci_map_t localMap_V;
+static volatile uint8_t *remote_Y;
+static volatile uint8_t *remote_U;
+static volatile uint8_t *remote_V;
 
 static sci_map_t remoteMap_Y;
 static sci_map_t remoteMap_U;
@@ -66,10 +62,6 @@ static int limit_numframes = 0;
 
 yuv_t *image;
 yuv_t *image2;
-
-uint8_t *remote_Y;
-uint8_t *remote_U;
-uint8_t *remote_V;
 
 static uint32_t width;
 static uint32_t height;
@@ -153,32 +145,32 @@ static sci_error_t init_SISCI() {
 
 	do {
 		SCIConnectSegment(vd, &remoteSegment_Y, remoteNodeId, remoteSegmentId_Y, localAdapterNo,
-				NO_CALLBACK,NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	do {
 		SCIConnectSegment(vd, &remoteSegment_U, remoteNodeId, remoteSegmentId_U, localAdapterNo,
-				NO_CALLBACK,NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	do {
 		 SCIConnectSegment(vd, &remoteSegment_V, remoteNodeId, remoteSegmentId_V, localAdapterNo,
-				 NO_CALLBACK,NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				 NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	int offset = 0;
 
-	remote_Y = SCIMapRemoteSegment(remoteSegment_Y , &remoteMap_Y, offset, ypw*yph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	remote_Y = SCIMapRemoteSegment(remoteSegment_Y, &remoteMap_Y, offset, ypw*yph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
 	if (error != SCI_ERROR_OK) {
 		return error;
 	}
 
-	remote_U = SCIMapRemoteSegment(remoteSegment_U , &remoteMap_U, offset, upw*uph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	remote_U = SCIMapRemoteSegment(remoteSegment_U, &remoteMap_U, offset, upw*uph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
 	if (error != SCI_ERROR_OK) {
 			return error;
 	}
 
-	remote_V = SCIMapRemoteSegment(remoteSegment_V , &remoteMap_V, offset, vpw*vph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
+	remote_V = SCIMapRemoteSegment(remoteSegment_ , &remoteMap_V, offset, vpw*vph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
 	if (error != SCI_ERROR_OK) {
 			return error;
 	}

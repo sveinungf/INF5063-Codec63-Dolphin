@@ -14,11 +14,19 @@
 #include "me.h"
 #include "tables.h"
 
+#include "sisci_types.h"
+#include "sisci_error.h"
+#include "sisci_api.h"
+
+#define SCI_NO_FLAGS 0
+#define SCI_NO_CALLBACK NULL
+
 
 // SISCI variables
 static sci_desc_t vd;
 
 static unsigned int localAdapterNo;
+static unsigned int localNodeId;
 static unsigned int remoteNodeId;
 
 static unsigned int localSegmentId_Y;
@@ -141,18 +149,18 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 
 	// Initialisation of SISCI API
 	sci_error_t error;
-	SCIInitialize(NO_FLAGS, &error);
+	SCIInitialize(SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCIOpen(&vd, NO_FLAGS, &error);
+	SCIOpen(&vd, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCIGetLocalNodeId(localAdapterNo, &localNodeId, NO_FLAGS, &error);
-	if(error != SCI_ERROR_OK) {
+	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
+	if(error != SCI_ERR_OK) {
 		return error;
 	}
 
@@ -161,91 +169,91 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 	localSegmentId_V = (localNodeId << 16) | remoteNodeId | V_COMPONENT;
 
 	// Create local segments for the processing machine to copy into
-	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, cm->ypw*cm->yph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, cm->ypw*cm->yph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, cm->upw*cm->uph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, cm->upw*cm->uph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, cm->vpw*cm->vph*sizeof(uint8_t), NULL, NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, cm->vpw*cm->vph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
 	// Map the local segments
 	int offset = 0;
-	local_Y = SCIMapLocalSegment(localSegment_Y , &localMap_Y, offset, cm->ypw*cm->yph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	local_Y = SCIMapLocalSegment(localSegment_Y , &localMap_Y, offset, cm->ypw*cm->yph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	local_U = SCIMapLocalSegment(localSegment_U , &localMap_U, offset, cm->upw*cm->uph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	local_U = SCIMapLocalSegment(localSegment_U , &localMap_U, offset, cm->upw*cm->uph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 			return error;
 	}
 
-	local_V = SCIMapLocalSegment(localSegment_V , &localMap_V, offset, cm->vpw*cm->vph*sizeof(uint8_t), NULL, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	local_V = SCIMapLocalSegment(localSegment_V , &localMap_V, offset, cm->vpw*cm->vph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 			return error;
 	}
 
 	// Make segments accessible from the network adapter
-	SCIPrepareSegment(localSegment_Y, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCIPrepareSegment(localSegment_Y, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCIPrepareSegment(localSegment_U, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCIPrepareSegment(localSegment_U, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCIPrepareSegment(localSegment_V, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCIPrepareSegment(localSegment_V, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
 	// Make segments accessible from other nodes
-	SCISetSegmentAvailable(localSegment_Y, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCISetSegmentAvailable(localSegment_Y, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCISetSegmentAvailable(localSegment_U, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCISetSegmentAvailable(localSegment_U, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCISetSegmentAvailable(localSegment_V, localAdapterNo, NO_FLAGS, &error);
-	if (error != SCI_ERROR_OK) {
+	SCISetSegmentAvailable(localSegment_V, localAdapterNo, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
 	// Create local interrupt descriptor(s) for communication between processing machine and writer machine
-	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, NULL, NULL, NO_FLAGS, &error);
+	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
 		return error;
 	}
 
 	/*
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, NUll, NULL, NO_FLAGS, &error);
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
 		return error;
 	}
 
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, NULL, NULL, NO_FLAGS, &error);
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
 		return error;
 	}
 
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, NULL, NULL, NO_FLAGS, &error);
+	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
 		return error;
@@ -254,39 +262,40 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 
 	/*
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_Y, remoteNodeId, localAdapterNo, Y_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
+		SCIConnectInterrupt(vd, &remote_interrupt_Y, remoteNodeId, localAdapterNo, Y_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
 
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_U, remoteNodeId, localAdapterNo, U_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
+		SCIConnectInterrupt(vd, &remote_interrupt_U, remoteNodeId, localAdapterNo, U_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
 
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_V, remoteNodeId, localAdapterNo, V_COMPONENT, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
+		SCIConnectInterrupt(vd, &remote_interrupt_V, remoteNodeId, localAdapterNo, V_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
 	*/
 
 	// Connect reader node to remote interrupt at processing machine
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
+		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
 
-	return SCI_ERROR_OK;
+	return SCI_ERR_OK;
 }
 
 static sci_error_t cleanup_SISCI() {
-	SCIRemoveInterrupt(local_interrupt_data, NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_data, NO_FLAGS, &error);
+	sci_error_t error;
+	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
+	SCIRemoveInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
 
-	SCIUnmapSegment(localMap_Y, NO_FLAGS, &error);
-	SCIUnmapSegment(localMap_U, NO_FLAGS, &error);
-	SCIUnmapSegment(localMap_V, NO_FLAGS, &error);
+	SCIUnmapSegment(localMap_Y, SCI_NO_FLAGS, &error);
+	SCIUnmapSegment(localMap_U, SCI_NO_FLAGS, &error);
+	SCIUnmapSegment(localMap_V, SCI_NO_FLAGS, &error);
 
-	SCIRemoveSegment(localSegment_Y, NO_FLAGS, &error);
-	SCIRemoveSegment(localSegment_U, NO_FLAGS, &error);
-	SCIRemoveSegment(localSegment_V, NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment_Y, SCI_NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment_U, SCI_NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment_V, SCI_NO_FLAGS, &error);
 
-	SCIClose(&vd, NO_FLAGS, &error);
+	SCIClose(&vd, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;

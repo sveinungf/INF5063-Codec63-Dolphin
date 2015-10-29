@@ -50,7 +50,7 @@ static sci_map_t localMap_U;
 static sci_map_t localMap_V;
 
 sci_local_interrupt_t local_interrupt_data;
-sci_remote_interrupt_t remote_interrupt_data;
+sci_remote_interrupt_t remote_data_interrupt;
 
 
 static char *output_file, *input_file;
@@ -241,7 +241,7 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 
 	// Connect reader node to remote interrupt at processing machine
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectInterrupt(vd, &remote_data_interrupt, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	return SCI_ERR_OK;
@@ -250,7 +250,7 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
 	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIDisconnectInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(remote_data_interrupt, SCI_NO_FLAGS, &error);
 
 	SCIUnmapSegment(localMap_Y, SCI_NO_FLAGS, &error);
 	SCIUnmapSegment(localMap_U, SCI_NO_FLAGS, &error);

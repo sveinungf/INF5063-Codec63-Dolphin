@@ -19,6 +19,10 @@
 #define SCI_NO_FLAGS 0
 #define SCI_NO_CALLBACK NULL
 
+#define READY_FOR_ORIG_TRANSFER 10
+#define MORE_DATA_TRANSFERED 15
+#define NO_MORE_DATA 20
+
 static sci_desc_t vd;
 
 static unsigned int localAdapterNo;
@@ -50,6 +54,8 @@ sci_sequence_t sequence_U;
 sci_sequence_t sequence_V;
 
 sci_local_interrupt_t local_interrupt_data;
+static unsigned int local_interrupt_number;
+
 sci_remote_interrupt_t remote_interrupt_data;
 sci_remote_interrupt_t remote_interrupt_finished;
 
@@ -196,7 +202,7 @@ static sci_error_t init_SISCI() {
 	}
 
 	// Create local interrupt descriptor(s) for communication between reader machine and processing machine
-	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, NULL, NULL, SCI_NO_FLAGS, &error);
+	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, &local_interrupt_number, NULL, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
@@ -204,11 +210,11 @@ static sci_error_t init_SISCI() {
 
 	// Connect reader node to remote interrupts at processing machine
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, DATA_TRANSFERED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_finished, remoteNodeId, localAdapterNo, 2, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectInterrupt(vd, &remote_interrupt_finished, remoteNodeId, localAdapterNo, NO_MORE_DATA, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	return SCI_ERR_OK;

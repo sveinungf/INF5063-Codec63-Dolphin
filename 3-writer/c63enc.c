@@ -51,11 +51,6 @@ static sci_map_t localMap_V;
 
 sci_local_interrupt_t local_interrupt_data;
 sci_remote_interrupt_t remote_interrupt_data;
-/*
-sci_local_interrupt_t local_interrupt_Y;
-sci_local_interrupt_t local_interrupt_U;
-sci_local_interrupt_t local_interrupt_V;
-*/
 
 
 static char *output_file, *input_file;
@@ -141,6 +136,10 @@ struct c63_common* init_c63_enc(int width, int height)
     cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
   }
 
+  segmentSize_Y = cm->ypw*cm->yph*sizeof(uint8_t);
+  segmentSize_U = cm->upw*cm->uph*sizeof(uint8_t);
+  segmentSize_V = cm->vpw*cm->vph*sizeof(uint8_t);
+
   return cm;
 }
 
@@ -169,34 +168,34 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 	localSegmentId_V = (localNodeId << 16) | remoteNodeId | V_COMPONENT;
 
 	// Create local segments for the processing machine to copy into
-	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, cm->ypw*cm->yph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, segmentSize_Y, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, cm->upw*cm->uph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, segmentSize_U, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, cm->vpw*cm->vph*sizeof(uint8_t), SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, segmentSize_V, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
 	// Map the local segments
 	int offset = 0;
-	local_Y = SCIMapLocalSegment(localSegment_Y , &localMap_Y, offset, cm->ypw*cm->yph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	local_Y = SCIMapLocalSegment(localSegment_Y , &localMap_Y, offset, segmentSize_Y, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	local_U = SCIMapLocalSegment(localSegment_U , &localMap_U, offset, cm->upw*cm->uph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	local_U = SCIMapLocalSegment(localSegment_U , &localMap_U, offset, segmentSize_U, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 			return error;
 	}
 
-	local_V = SCIMapLocalSegment(localSegment_V , &localMap_V, offset, cm->vpw*cm->vph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	local_V = SCIMapLocalSegment(localSegment_V , &localMap_V, offset, segmentSize_V, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 			return error;
 	}
@@ -239,40 +238,6 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
-
-	/*
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
-
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
-
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
-	*/
-
-	/*
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_Y, remoteNodeId, localAdapterNo, Y_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_U, remoteNodeId, localAdapterNo, U_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_V, remoteNodeId, localAdapterNo, V_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-	*/
 
 	// Connect reader node to remote interrupt at processing machine
 	do {

@@ -9,19 +9,19 @@
 #include <string.h>
 
 #include "c63.h"
-#include "c63_write.h"
-#include "common.h"
-#include "me.h"
-#include "tables.h"
 
-#include "sisci_types.h"
-#include "sisci_error.h"
 #include "sisci_api.h"
 
 #define SCI_NO_FLAGS 0
 #define SCI_NO_CALLBACK NULL
 
-static sci_desc_t vd;
+#define READY_FOR_ORIG_TRANSFER 10
+#define MORE_DATA_TRANSFERED 15
+#define NO_MORE_DATA 20
+
+static sci_desc_t sd_Y;
+static sci_desc_t sd_U;
+static sci_desc_t sd_V;
 
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
@@ -52,17 +52,9 @@ sci_sequence_t sequence_U;
 sci_sequence_t sequence_V;
 
 sci_local_interrupt_t local_interrupt_data;
-sci_remote_interrupt_t remote_interrupt_data;
-sci_remote_interrupt_t remote_interrupt_finished;
-/*
-sci_local_interrupt_t local_interrupt_Y;
-sci_local_interrupt_t local_interrupt_U;
-sci_local_interrupt_t local_interrupt_V;
+static unsigned int local_interrupt_number;
 
-sci_remote_interrupt_t remote_interrupt_Y;
-sci_remote_interrupt_t remote_interrupt_U;
-sci_remote_interrupt_t remote_interrupt_V;
-*/
+sci_remote_data_interrupt_t remote_data_interrupt;
 
 static char *input_file;
 
@@ -82,7 +74,7 @@ extern int optind;
 extern char *optarg;
 
 /* Read planar YUV frames with 4:2:0 chroma sub-sampling */
-static int read_yuv(FILE* file) {
+static int read_yuv(FILE *file) {
 	size_t len = 0;
 
 	/* Read Y. The size of Y is the same as the size of the image. The indices
@@ -121,10 +113,14 @@ static void init_c63_enc() {
 	vpw = (uint32_t) (ceil(width*VX/(YX*8.0f))*8);
 	vph = (uint32_t) (ceil(height*VY/(YY*8.0f))*8);
 
+	segmentSize_Y = ypw*yph*sizeof(uint8_t);
+	segmentSize_U = upw*uph*sizeof(uint8_t);
+	segmentSize_V = vpw*vph*sizeof(uint8_t);
+
 	image = malloc(sizeof(*image));
-	image->Y = malloc(ypw*yph*sizeof(uint8_t));
-	image->U = malloc(upw*uph*sizeof(uint8_t));
-	image->V = malloc(vpw*vph*sizeof(uint8_t));
+	image->Y = malloc(segmentSize_Y);
+	image->U = malloc(segmentSize_U);
+	image->V = malloc(segmentSize_V);
 }
 
 static sci_error_t init_SISCI() {
@@ -136,11 +132,36 @@ static sci_error_t init_SISCI() {
 		return error;
 	}
 
-	SCIOpen(&vd, SCI_NO_FLAGS, &error);
+	SCIOpen(&sd_Y, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
+	// Connect reader node to remote interrupt at processing machine
+	printf("Connecting to interrupt on encoder...\n");
+	do {
+		SCIConnectDataInterrupt(sd_Y, &remote_data_interrupt, remoteNodeId, localAdapterNo, MORE_DATA_TRANSFERED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
+
+	printf("Done\n");
+
+	// Send interrupt to computation node with the size of the components
+	uint32_t sizes[8] = {width, height, ypw, yph, upw, uph, vpw, vph};
+	SCITriggerDataInterrupt(remote_data_interrupt, (void*) &sizes, 8*sizeof(uint32_t), SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
+		exit(EXIT_FAILURE);
+	}
+
+	SCIOpen(&sd_U, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	SCIOpen(&sd_V, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+	return error;
+	}
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	if(error != SCI_ERR_OK) {
@@ -152,33 +173,33 @@ static sci_error_t init_SISCI() {
 	remoteSegmentId_V = (remoteNodeId << 16) | localNodeId | V_COMPONENT;
 
 	do {
-		SCIConnectSegment(vd, &remoteSegment_Y, remoteNodeId, remoteSegmentId_Y, localAdapterNo,
+		SCIConnectSegment(sd_Y, &remoteSegment_Y, remoteNodeId, remoteSegmentId_Y, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	do {
-		SCIConnectSegment(vd, &remoteSegment_U, remoteNodeId, remoteSegmentId_U, localAdapterNo,
+		SCIConnectSegment(sd_U, &remoteSegment_U, remoteNodeId, remoteSegmentId_U, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	do {
-		 SCIConnectSegment(vd, &remoteSegment_V, remoteNodeId, remoteSegmentId_V, localAdapterNo,
+		 SCIConnectSegment(sd_V, &remoteSegment_V, remoteNodeId, remoteSegmentId_V, localAdapterNo,
 				 SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
-	int offset = 0;
 
-	remote_Y = SCIMapRemoteSegment(remoteSegment_Y, &remoteMap_Y, offset, ypw*yph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	int offset = 0;
+	remote_Y = SCIMapRemoteSegment(remoteSegment_Y, &remoteMap_Y, offset, segmentSize_Y, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	remote_U = SCIMapRemoteSegment(remoteSegment_U, &remoteMap_U, offset, upw*uph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	remote_U = SCIMapRemoteSegment(remoteSegment_U, &remoteMap_U, offset, segmentSize_U, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 			return error;
 	}
 
-	remote_V = SCIMapRemoteSegment(remoteSegment_V, &remoteMap_V, offset, vpw*vph*sizeof(uint8_t), NULL, SCI_NO_FLAGS, &error);
+	remote_V = SCIMapRemoteSegment(remoteSegment_V, &remoteMap_V, offset, segmentSize_V, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 			return error;
 	}
@@ -186,71 +207,29 @@ static sci_error_t init_SISCI() {
 	// Create sequences for data error checking
 	SCICreateMapSequence(remoteMap_Y, &sequence_Y, 0, &error);
     if (error != SCI_ERR_OK) {
-    	fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+    	fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
     	return error;
 	}
 
     SCICreateMapSequence(remoteMap_U, &sequence_U, 0, &error);
     if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
 		return error;
 	}
 
     SCICreateMapSequence(remoteMap_V, &sequence_V, 0, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	// Create local interrupt descriptor(s) for communication between reader machine and processing machine
-	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, NULL, NULL, SCI_NO_FLAGS, &error);
+    local_interrupt_number = 10;
+	SCICreateInterrupt(sd_Y, &local_interrupt_data, localAdapterNo, &local_interrupt_number, NULL, NULL, SCI_FLAG_FIXED_INTNO, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
-
-	/*
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, NUll, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
-		return error;
-	}
-
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, NULL, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
-		return error;
-	}
-
-	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, NULL, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
-		return error;
-	}
-	*/
-
-	/*
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_Y, remoteNodeId, localAdapterNo, Y_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
-
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_U, remoteNodeId, localAdapterNo, U_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
-
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_V, remoteNodeId, localAdapterNo, V_COMPONENT, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERROR_OK);
-	*/
-
-	// Connect reader node to remote interrupts at processing machine
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_data, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-	do {
-		SCIConnectInterrupt(vd, &remote_interrupt_finished, remoteNodeId, localAdapterNo, 2, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
 
 	return SCI_ERR_OK;
 }
@@ -258,8 +237,7 @@ static sci_error_t init_SISCI() {
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
 	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_finished, SCI_NO_FLAGS, &error);
+	SCIDisconnectDataInterrupt(remote_data_interrupt, SCI_NO_FLAGS, &error);
 
 	SCIRemoveSequence(sequence_Y, SCI_NO_FLAGS, &error);
 	SCIRemoveSequence(sequence_U, SCI_NO_FLAGS, &error);
@@ -273,7 +251,9 @@ static sci_error_t cleanup_SISCI() {
 	SCIDisconnectSegment(remoteSegment_U, SCI_NO_FLAGS, &error);
 	SCIDisconnectSegment(remoteSegment_V, SCI_NO_FLAGS, &error);
 
-	SCIClose(&vd, SCI_NO_FLAGS, &error);
+	SCIClose(sd_Y, SCI_NO_FLAGS, &error);
+	SCIClose(sd_U, SCI_NO_FLAGS, &error);
+	SCIClose(sd_V, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -330,7 +310,7 @@ int main(int argc, char **argv) {
 
 	init_c63_enc();
 
-	static sci_error_t error = init_SISCI();
+	sci_error_t error = init_SISCI();
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr, "Error initialising SISCI API - error code: %x\n", error);
 		exit(EXIT_FAILURE);
@@ -353,15 +333,15 @@ int main(int argc, char **argv) {
 	int numframes = 0;
 
 	int rc;
+	uint8_t done = 0;
 	while (1) {
 		rc = read_yuv(infile);
 
 		if (!rc) {
-			// Signal computation node that there are no more frames to be encoded
-			SCITriggerInterrupt(remote_interrupt_finished, SCI_NO_FLAGS, &error);
+			// No more data
+			done = 1;
 			break;
 		}
-
 		if (numframes != 0) {
 			// Wait for interrupt
 			do {
@@ -371,45 +351,47 @@ int main(int argc, char **argv) {
 		}
 
 		// Copy new frame to remote segment
-		printf("Sending frame %d to computation node, ", numframes);
+		printf("Sending frame %d to computation node\n", numframes);
 
 		int remoteOffset = 0;
-
-		SCIMemCpy(sequence_Y, image->Y, remoteMap_Y, remoteOffset, ypw*yph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(sequence_Y, image->Y, remoteMap_Y, remoteOffset, segmentSize_Y, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
-		SCIMemCpy(sequence_U, image->U, remoteMap_U, remoteOffset, upw*uph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(sequence_U, image->U, remoteMap_U, remoteOffset, segmentSize_U, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
-		SCIMemCpy(sequence_V, image->V, remoteMap_V, remoteOffset, vpw*vph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(sequence_V, image->V, remoteMap_V, remoteOffset, segmentSize_V, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
+
 
 		printf("Done!\n");
 
 		// Send interrupt to computation node signalling that the frame has been copied
-		SCITriggerInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
+		SCITriggerDataInterrupt(remote_data_interrupt, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 		if (error != SCI_ERR_OK) {
-			fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n",error);
+			fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
 		++numframes;
 
 		if (limit_numframes && numframes >= limit_numframes) {
-			// Signal computation node that there are no more frames to be encoded
-			SCITriggerInterrupt(remote_interrupt_finished, SCI_NO_FLAGS, &error);
+			// No more data
+			done = 1;
 			break;
 		}
 	}
+	// Signal computation node that there are no more frames to be encoded
+	SCITriggerDataInterrupt(remote_data_interrupt, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 
 	free(image->Y);
 	free(image->U);

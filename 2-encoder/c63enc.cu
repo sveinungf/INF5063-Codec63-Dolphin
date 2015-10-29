@@ -14,77 +14,39 @@ extern "C" {
 #include "c63.h"
 #include "c63_write.h"
 #include "common.h"
+#include "common_sisci.h"
 #include "me.h"
 #include "tables.h"
 }
 
-static char *output_file, *input_file;
+static char *output_file;
 FILE *outfile;
-
-static int limit_numframes = 0;
-
-static uint32_t width;
-static uint32_t height;
 
 /* getopt */
 extern int optind;
 extern char *optarg;
 
-#define NO_FLAGS        0
-#define NO_CALLBACK     NULL
+static sci_error_t error;
+static sci_desc_t sdY;
+static sci_desc_t sdU;
+static sci_desc_t sdV;
+static sci_local_segment_t localSegmentY;
+static sci_local_segment_t localSegmentU;
+static sci_local_segment_t localSegmentV;
+static sci_map_t localMapY;
+static sci_map_t localMapU;
+static sci_map_t localMapV;
+static sci_local_data_interrupt_t interruptFromReader;
+static sci_remote_interrupt_t interruptToReader;
+static unsigned int interruptFromReaderNo;
+static unsigned int localAdapterNo;
+static unsigned int localNodeId;
+static unsigned int localSegmentIdY;
+static unsigned int localSegmentIdU;
+static unsigned int localSegmentIdV;
+static unsigned int readerNodeId;
 
-sci_error_t error;
-
-/* Read planar YUV frames with 4:2:0 chroma sub-sampling */
-static yuv_t* read_yuv(FILE *file, struct c63_common *cm)
-{
-	size_t len = 0;
-	yuv_t *image = (yuv_t*) malloc(sizeof(*image));
-
-	/* Read Y. The size of Y is the same as the size of the image. The indices
-	 represents the color component (0 is Y, 1 is U, and 2 is V) */
-	image->Y = (uint8_t*) calloc(1, cm->padw[Y_COMPONENT] * cm->padh[Y_COMPONENT]);
-	len += fread(image->Y, 1, width * height, file);
-
-	/* Read U. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y
-	 because (height/2)*(width/2) = (height*width)/4. */
-	image->U = (uint8_t*) calloc(1, cm->padw[U_COMPONENT] * cm->padh[U_COMPONENT]);
-	len += fread(image->U, 1, (width * height) / 4, file);
-
-	/* Read V. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y. */
-	image->V = (uint8_t*) calloc(1, cm->padw[V_COMPONENT] * cm->padh[V_COMPONENT]);
-	len += fread(image->V, 1, (width * height) / 4, file);
-
-	if (ferror(file))
-	{
-		perror("ferror");
-		exit(EXIT_FAILURE);
-	}
-
-	if (feof(file))
-	{
-		free(image->Y);
-		free(image->U);
-		free(image->V);
-		free(image);
-
-		return NULL;
-	}
-	else if (len != width * height * 1.5)
-	{
-		fprintf(stderr, "Reached end of file, but incorrect bytes read.\n");
-		fprintf(stderr, "Wrong input? (height: %d width: %d)\n", height, width);
-
-		free(image->Y);
-		free(image->U);
-		free(image->V);
-		free(image);
-
-		return NULL;
-	}
-
-	return image;
-}
+static yuv_t image;
 
 static void c63_encode_image(struct c63_common *cm, yuv_t *image)
 {
@@ -144,8 +106,6 @@ static void c63_encode_image(struct c63_common *cm, yuv_t *image)
 
 struct c63_common* init_c63_enc(int width, int height)
 {
-	int i;
-
 	/* calloc() sets allocated memory to zero */
 	struct c63_common *cm = (struct c63_common*) calloc(1, sizeof(struct c63_common));
 
@@ -170,7 +130,7 @@ struct c63_common* init_c63_enc(int width, int height)
 	cm->keyframe_interval = 100;  // Distance between keyframes
 
 	/* Initialize quantization tables */
-	for (i = 0; i < 64; ++i)
+	for (int i = 0; i < 64; ++i)
 	{
 		cm->quanttbl[Y_COMPONENT][i] = yquanttbl_def[i] / (cm->qp / 10.0);
 		cm->quanttbl[U_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
@@ -188,42 +148,210 @@ void free_c63_enc(struct c63_common* cm)
 
 static void print_help()
 {
-	printf("Usage: ./c63enc [options] input_file\n");
-	printf("Commandline options:\n");
-	printf("  -h                             Height of images to compress\n");
-	printf("  -w                             Width of images to compress\n");
+	printf("Usage: ./c63enc [options]\n");
+	printf("Command line options:\n");
+	printf("  -a                             Local adapter number\n");
 	printf("  -o                             Output file (.c63)\n");
-	printf("  [-f]                           Limit number of frames to encode\n");
+	printf("  -r                             Reader node ID\n");
 	printf("\n");
 
 	exit(EXIT_FAILURE);
 }
 
+#define SISCI_ERROR_CHECK
+
+#ifdef SISCI_ERROR_CHECK
+#define sisci_assert(error) { sisci_check_error(error, __FILE__, __LINE__, true); }
+#define sisci_check(error) { sisci_check_error(error, __FILE__, __LINE__, false); }
+#else
+#define sisci_assert(error) {}
+#define sisci_check(error) {}
+#endif
+
+inline static void sisci_check_error(sci_error_t error, const char* file, int line, bool terminate)
+{
+	if (error != SCI_ERR_OK)
+	{
+		fprintf(stderr, "SISCI error code 0x%x at %s, line %d", error, file, line);
+
+		if (terminate)
+		{
+			SCITerminate();
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
+static void init_SISCI()
+{
+	sci_error_t error;
+
+	SCIInitialize(NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIOpen(&sdY, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIOpen(&sdU, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIOpen(&sdV, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIGetLocalNodeId(localAdapterNo, &localNodeId, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	// Interrupts from the reader
+	interruptFromReaderNo = MORE_DATA_TRANSFERED;
+	SCICreateDataInterrupt(sdY, &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
+			NULL, SCI_FLAG_FIXED_INTNO, &error);
+	sisci_assert(error);
+
+	// Interrupts to the reader
+	printf("Connecting to interrupt on reader...\n");
+	do
+	{
+		SCIConnectInterrupt(sdY, &interruptToReader, readerNodeId, localAdapterNo,
+				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+	}
+	while (error != SCI_ERR_OK);
+	printf("Done\n");
+}
+
+static void receive_width_and_height(int& width, int& height)
+{
+	printf("Waiting for widths and heights from reader...\n");
+	uint32_t widthsAndHeights[8];
+	unsigned int length = 8 * sizeof(uint32_t);
+	SCIWaitForDataInterrupt(interruptFromReader, &widthsAndHeights, &length, SCI_INFINITE_TIMEOUT,
+			NO_FLAGS, &error);
+	sisci_assert(error);
+
+	width = widthsAndHeights[0];
+	height = widthsAndHeights[1];
+}
+
+static void init_SISCI_segments(struct c63_common* cm)
+{
+	localSegmentIdY = (localNodeId << 16) | readerNodeId | Y_COMPONENT;
+	localSegmentIdU = (localNodeId << 16) | readerNodeId | U_COMPONENT;
+	localSegmentIdV = (localNodeId << 16) | readerNodeId | V_COMPONENT;
+	unsigned int segmentSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
+	unsigned int segmentSizeU = cm->upw * cm->uph * sizeof(uint8_t);
+	unsigned int segmentSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
+
+	SCICreateSegment(sdY, &localSegmentY, localSegmentIdY, segmentSizeY, NO_CALLBACK, NULL,
+			NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCICreateSegment(sdU, &localSegmentU, localSegmentIdU, segmentSizeU, NO_CALLBACK, NULL,
+			NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCICreateSegment(sdV, &localSegmentV, localSegmentIdV, segmentSizeV, NO_CALLBACK, NULL,
+			NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIPrepareSegment(localSegmentY, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIPrepareSegment(localSegmentU, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIPrepareSegment(localSegmentV, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	unsigned int offset = 0; // TODO: OK?
+
+	image.Y = (uint8_t*) SCIMapLocalSegment(localSegmentY, &localMapY, offset, segmentSizeY, NULL, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	image.U = (uint8_t*) SCIMapLocalSegment(localSegmentU, &localMapU, offset, segmentSizeU, NULL, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	image.V = (uint8_t*) SCIMapLocalSegment(localSegmentV, &localMapV, offset, segmentSizeV, NULL, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCISetSegmentAvailable(localSegmentY, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCISetSegmentAvailable(localSegmentU, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCISetSegmentAvailable(localSegmentV, localAdapterNo, NO_FLAGS, &error);
+	sisci_assert(error);
+}
+
+static void cleanup_SISCI()
+{
+	sci_error_t error;
+
+	SCIDisconnectInterrupt(interruptToReader, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveDataInterrupt(interruptFromReader, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCISetSegmentUnavailable(localSegmentY, localAdapterNo, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCISetSegmentUnavailable(localSegmentU, localAdapterNo, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCISetSegmentUnavailable(localSegmentV, localAdapterNo, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIUnmapSegment(localMapY, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIUnmapSegment(localMapU, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIUnmapSegment(localMapV, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveSegment(localSegmentY, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveSegment(localSegmentU, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveSegment(localSegmentV, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIClose(sdY, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIClose(sdU, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIClose(sdV, NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCITerminate();
+}
+
 int main(int argc, char **argv)
 {
 	int c;
-	yuv_t *image;
 
 	if (argc == 1)
 	{
 		print_help();
 	}
 
-	while ((c = getopt(argc, argv, "h:w:o:f:i:")) != -1)
+	while ((c = getopt(argc, argv, "a:o:r:")) != -1)
 	{
 		switch (c)
 		{
-			case 'h':
-				height = atoi(optarg);
-				break;
-			case 'w':
-				width = atoi(optarg);
+			case 'a':
+				localAdapterNo = atoi(optarg);
 				break;
 			case 'o':
 				output_file = optarg;
 				break;
-			case 'f':
-				limit_numframes = atoi(optarg);
+			case 'r':
+				readerNodeId = atoi(optarg);
 				break;
 			default:
 				print_help();
@@ -231,17 +359,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (optind >= argc)
+	if (optind > argc)
 	{
 		fprintf(stderr, "Error getting program options, try --help.\n");
 		exit(EXIT_FAILURE);
-	}
-
-	SCIInitialize(NO_FLAGS, &error);
-	if (error != SCI_ERR_OK)
-	{
-		fprintf(stderr, "SCIInitialize failed - Error code: 0x%x\n", error);
-		return (error);
 	}
 
 	outfile = fopen(output_file, "wb");
@@ -252,57 +373,50 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	struct c63_common *cm = init_c63_enc(width, height);
-	cm->e_ctx.fp = outfile;
-
-	input_file = argv[optind];
-
-	if (limit_numframes)
-	{
-		printf("Limited to %d frames.\n", limit_numframes);
-	}
-
-	FILE *infile = fopen(input_file, "rb");
-
-	if (infile == NULL)
-	{
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
-
 	/* Encode input frames */
 	int numframes = 0;
 
+	init_SISCI();
+
+	int width, height;
+	receive_width_and_height(width, height);
+
+	struct c63_common *cm = init_c63_enc(width, height);
+	cm->e_ctx.fp = outfile;
+
+	init_SISCI_segments(cm);
+
+	uint8_t done;
+	unsigned int done_size = sizeof(uint8_t);
+
 	while (1)
 	{
-		image = read_yuv(infile, cm);
+		printf("Waiting for interrupt...\n");
+		SCIWaitForDataInterrupt(interruptFromReader, &done, &done_size, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+		sisci_assert(error);
 
-		if (!image)
+		if (done)
 		{
+			printf("DONE from reader\n");
 			break;
 		}
 
 		printf("Encoding frame %d, ", numframes);
-		c63_encode_image(cm, image);
-
-		free(image->Y);
-		free(image->U);
-		free(image->V);
-		free(image);
+		c63_encode_image(cm, &image);
 
 		printf("Done!\n");
 
 		++numframes;
 
-		if (limit_numframes && numframes >= limit_numframes)
-		{
-			break;
-		}
+		// Reader can transfer next frame
+		SCITriggerInterrupt(interruptToReader, NO_FLAGS, &error);
+		sisci_assert(error);
 	}
 
 	free_c63_enc(cm);
 	fclose(outfile);
-	fclose(infile);
+
+	cleanup_SISCI();
 
 	return EXIT_SUCCESS;
 }

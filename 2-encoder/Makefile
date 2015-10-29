@@ -8,6 +8,12 @@ LDFLAGS = -lm
 
 DEBUG ?= 0
 
+VIDEO ?= 0
+FRAMES ?= 0
+
+NODE_ID_READER ?= 4
+LOCAL_ADAPTER_NO ?= 0
+
 ifeq ($(DEBUG),1)
 	CCFLAGS += -Og -g -pg -DSHOW_CYCLES
 	NVCCFLAGS += -G -lineinfo
@@ -28,9 +34,6 @@ ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_NVCCFLAGS += $(addprefix -Xptxas ,$(PTXFLAGS))
 
 ALL_LDFLAGS = $(addprefix -Xlinker ,$(LDFLAGS))
-
-VIDEO ?= 0
-FRAMES ?= 0
 
 ifeq ($(VIDEO),0)
 	WIDTH = 352
@@ -70,7 +73,7 @@ clean:
 	rm -f *.o c63enc temp/* $(OUTPUT_VIDEO)
 
 encode: c63enc
-	./c63enc -w $(WIDTH) -h $(HEIGHT) -f $(FRAMES) -o temp/test.c63 $(INPUT_VIDEO)
+	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -o temp/test.c63
 decode:
 	./c63dec temp/test.c63 $(OUTPUT_VIDEO)
 

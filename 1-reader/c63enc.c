@@ -14,8 +14,6 @@
 #include "me.h"
 #include "tables.h"
 
-#include "sisci_types.h"
-#include "sisci_error.h"
 #include "sisci_api.h"
 
 #define SCI_NO_FLAGS 0
@@ -82,7 +80,7 @@ extern int optind;
 extern char *optarg;
 
 /* Read planar YUV frames with 4:2:0 chroma sub-sampling */
-static int read_yuv(FILE* file) {
+static int read_yuv(FILE *file) {
 	size_t len = 0;
 
 	/* Read Y. The size of Y is the same as the size of the image. The indices
@@ -186,45 +184,45 @@ static sci_error_t init_SISCI() {
 	// Create sequences for data error checking
 	SCICreateMapSequence(remoteMap_Y, &sequence_Y, 0, &error);
     if (error != SCI_ERR_OK) {
-    	fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+    	fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
     	return error;
 	}
 
     SCICreateMapSequence(remoteMap_U, &sequence_U, 0, &error);
     if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
 		return error;
 	}
 
     SCICreateMapSequence(remoteMap_V, &sequence_V, 0, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	// Create local interrupt descriptor(s) for communication between reader machine and processing machine
 	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, NULL, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	/*
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, NUll, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, NULL, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, NULL, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 	*/
@@ -258,8 +256,8 @@ static sci_error_t init_SISCI() {
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
 	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_finished, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(remote_interrupt_finished, SCI_NO_FLAGS, &error);
 
 	SCIRemoveSequence(sequence_Y, SCI_NO_FLAGS, &error);
 	SCIRemoveSequence(sequence_U, SCI_NO_FLAGS, &error);
@@ -273,7 +271,7 @@ static sci_error_t cleanup_SISCI() {
 	SCIDisconnectSegment(remoteSegment_U, SCI_NO_FLAGS, &error);
 	SCIDisconnectSegment(remoteSegment_V, SCI_NO_FLAGS, &error);
 
-	SCIClose(&vd, SCI_NO_FLAGS, &error);
+	SCIClose(vd, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -330,7 +328,7 @@ int main(int argc, char **argv) {
 
 	init_c63_enc();
 
-	static sci_error_t error = init_SISCI();
+	sci_error_t error = init_SISCI();
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr, "Error initialising SISCI API - error code: %x\n", error);
 		exit(EXIT_FAILURE);
@@ -377,19 +375,19 @@ int main(int argc, char **argv) {
 
 		SCIMemCpy(sequence_Y, image->Y, remoteMap_Y, remoteOffset, ypw*yph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
 		SCIMemCpy(sequence_U, image->U, remoteMap_U, remoteOffset, upw*uph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
 		SCIMemCpy(sequence_V, image->V, remoteMap_V, remoteOffset, vpw*vph*sizeof(uint8_t), SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n",error);
+			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 
@@ -398,7 +396,7 @@ int main(int argc, char **argv) {
 		// Send interrupt to computation node signalling that the frame has been copied
 		SCITriggerInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
 		if (error != SCI_ERR_OK) {
-			fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n",error);
+			fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
 

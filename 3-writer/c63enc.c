@@ -41,9 +41,9 @@ static unsigned int segmentSize_Y;
 static unsigned int segmentSize_U;
 static unsigned int segmentSize_V;
 
-static volatile uint8_t local_Y;
-static volatile uint8_t local_U;
-static volatile uint8_t local_V;
+static volatile uint8_t *local_Y;
+static volatile uint8_t *local_U;
+static volatile uint8_t *local_V;
 
 static sci_map_t localMap_Y;
 static sci_map_t localMap_U;
@@ -236,26 +236,26 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 	// Create local interrupt descriptor(s) for communication between processing machine and writer machine
 	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	/*
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, Y_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, U_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 
 	SCICreateInterrupt(vd, &local_interrupt_Y, localAdapterNo, V_COMPONENT, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n",error);
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
 	}
 	*/
@@ -285,7 +285,7 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
 	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIRemoveInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(remote_interrupt_data, SCI_NO_FLAGS, &error);
 
 	SCIUnmapSegment(localMap_Y, SCI_NO_FLAGS, &error);
 	SCIUnmapSegment(localMap_U, SCI_NO_FLAGS, &error);
@@ -295,7 +295,7 @@ static sci_error_t cleanup_SISCI() {
 	SCIRemoveSegment(localSegment_U, SCI_NO_FLAGS, &error);
 	SCIRemoveSegment(localSegment_V, SCI_NO_FLAGS, &error);
 
-	SCIClose(&vd, SCI_NO_FLAGS, &error);
+	SCIClose(vd, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -384,18 +384,12 @@ int main(int argc, char **argv)
 
   while (1)
   {
-    image = read_yuv(infile, cm);
-
-    if (!image) { break; }
-
-    printf("Encoding frame %d, ", numframes);
-    c63_encode_image(cm, image);
-
+	/*
     free(image->Y);
     free(image->U);
     free(image->V);
     free(image);
-
+	*/
     printf("Done!\n");
 
     ++numframes;

@@ -15,8 +15,13 @@ else
 	CCFLAGS += -O3
 endif
 
-CCFLAGS += -idirafter /opt/DIS/include
-LDFLAGS += -L /opt/DIS/lib64 -lsisci
+DIS_SRC = /home/inf5063-g03/exam3/DIS/src
+INCLUDE_PATHS = $(DIS_SRC)/include/dis
+INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
+INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
+
+CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
+LDFLAGS += -L/opt/DIS/lib64 -lsisci
 
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))

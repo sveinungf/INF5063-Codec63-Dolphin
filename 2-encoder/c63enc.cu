@@ -29,9 +29,7 @@ extern char *optarg;
 static sci_error_t error;
 static sci_desc_t sd;
 static sci_local_segment_t localSegment;
-static sci_map_t localMapY;
-static sci_map_t localMapU;
-static sci_map_t localMapV;
+static sci_map_t localMap;
 static sci_local_data_interrupt_t interruptFromReader;
 static sci_remote_interrupt_t interruptToReader;
 static unsigned int interruptFromReaderNo;
@@ -207,7 +205,7 @@ static void init_SISCI()
 
 static void receive_width_and_height(int& width, int& height)
 {
-	printf("Waiting for widths and heights from reader...\n");
+	printf("Waiting for widths and heights from reader... ");
 	uint32_t widthsAndHeights[2];
 	unsigned int length = 2 * sizeof(uint32_t);
 	SCIWaitForDataInterrupt(interruptFromReader, &widthsAndHeights, &length, SCI_INFINITE_TIMEOUT,
@@ -216,6 +214,7 @@ static void receive_width_and_height(int& width, int& height)
 
 	width = widthsAndHeights[0];
 	height = widthsAndHeights[1];
+	printf("Done!\n");
 }
 
 static void init_SISCI_segments(struct c63_common* cm)
@@ -233,18 +232,16 @@ static void init_SISCI_segments(struct c63_common* cm)
 
 	SCIPrepareSegment(localSegment, localAdapterNo, NO_FLAGS, &error);
 
+	void* buffer = SCIMapLocalSegment(localSegment, &localMap, 0, segmentSize, NULL, NO_FLAGS, &error);
+	sisci_assert(error);
+
 	unsigned int offset = 0;
 
-	image.Y = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapY, offset, segmentSizeY, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
+	image.Y = (uint8_t*) buffer + offset;
 	offset += segmentSizeY;
-
-	image.U = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapU, offset, segmentSizeU, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
+	image.U = (uint8_t*) buffer + offset;
 	offset += segmentSizeU;
-
-	image.V = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapV, offset, segmentSizeV, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
+	image.V = (uint8_t*) buffer + offset;
 	offset += segmentSizeV;
 
 	SCISetSegmentAvailable(localSegment, localAdapterNo, NO_FLAGS, &error);
@@ -264,13 +261,7 @@ static void cleanup_SISCI()
 	SCISetSegmentUnavailable(localSegment, localAdapterNo, NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIUnmapSegment(localMapY, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIUnmapSegment(localMapU, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIUnmapSegment(localMapV, NO_FLAGS, &error);
+	SCIUnmapSegment(localMap, NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCIRemoveSegment(localSegment, NO_FLAGS, &error);

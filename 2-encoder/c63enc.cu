@@ -27,12 +27,8 @@ extern int optind;
 extern char *optarg;
 
 static sci_error_t error;
-static sci_desc_t sdY;
-static sci_desc_t sdU;
-static sci_desc_t sdV;
-static sci_local_segment_t localSegmentY;
-static sci_local_segment_t localSegmentU;
-static sci_local_segment_t localSegmentV;
+static sci_desc_t sd;
+static sci_local_segment_t localSegment;
 static sci_map_t localMapY;
 static sci_map_t localMapU;
 static sci_map_t localMapV;
@@ -41,9 +37,6 @@ static sci_remote_interrupt_t interruptToReader;
 static unsigned int interruptFromReaderNo;
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
-static unsigned int localSegmentIdY;
-static unsigned int localSegmentIdU;
-static unsigned int localSegmentIdV;
 static unsigned int readerNodeId;
 
 static yuv_t image;
@@ -189,13 +182,7 @@ static void init_SISCI()
 	SCIInitialize(NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIOpen(&sdY, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCIOpen(&sdU, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCIOpen(&sdV, NO_FLAGS, &error);
+	SCIOpen(&sd, NO_FLAGS, &error);
 	sisci_assert(error);
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, NO_FLAGS, &error);
@@ -203,26 +190,26 @@ static void init_SISCI()
 
 	// Interrupts from the reader
 	interruptFromReaderNo = MORE_DATA_TRANSFERED;
-	SCICreateDataInterrupt(sdY, &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
+	SCICreateDataInterrupt(sd, &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
 			NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
 	// Interrupts to the reader
-	printf("Connecting to interrupt on reader...\n");
+	printf("Connecting to interrupt on reader... ");
 	do
 	{
-		SCIConnectInterrupt(sdY, &interruptToReader, readerNodeId, localAdapterNo,
+		SCIConnectInterrupt(sd, &interruptToReader, readerNodeId, localAdapterNo,
 				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
-	printf("Done\n");
+	printf("Done!\n");
 }
 
 static void receive_width_and_height(int& width, int& height)
 {
 	printf("Waiting for widths and heights from reader...\n");
-	uint32_t widthsAndHeights[8];
-	unsigned int length = 8 * sizeof(uint32_t);
+	uint32_t widthsAndHeights[2];
+	unsigned int length = 2 * sizeof(uint32_t);
 	SCIWaitForDataInterrupt(interruptFromReader, &widthsAndHeights, &length, SCI_INFINITE_TIMEOUT,
 			NO_FLAGS, &error);
 	sisci_assert(error);
@@ -233,52 +220,34 @@ static void receive_width_and_height(int& width, int& height)
 
 static void init_SISCI_segments(struct c63_common* cm)
 {
-	localSegmentIdY = (localNodeId << 16) | readerNodeId | Y_COMPONENT;
-	localSegmentIdU = (localNodeId << 16) | readerNodeId | U_COMPONENT;
-	localSegmentIdV = (localNodeId << 16) | readerNodeId | V_COMPONENT;
+	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | 0;
+
 	unsigned int segmentSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
 	unsigned int segmentSizeU = cm->upw * cm->uph * sizeof(uint8_t);
 	unsigned int segmentSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
 
-	SCICreateSegment(sdY, &localSegmentY, localSegmentIdY, segmentSizeY, NO_CALLBACK, NULL,
-			NO_FLAGS, &error);
+	unsigned int segmentSize = segmentSizeY + segmentSizeU + segmentSizeV;
+
+	SCICreateSegment(sd, &localSegment, localSegmentId, segmentSize, NO_CALLBACK, NULL, NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCICreateSegment(sdU, &localSegmentU, localSegmentIdU, segmentSizeU, NO_CALLBACK, NULL,
-			NO_FLAGS, &error);
+	SCIPrepareSegment(localSegment, localAdapterNo, NO_FLAGS, &error);
+
+	unsigned int offset = 0;
+
+	image.Y = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapY, offset, segmentSizeY, NULL, NO_FLAGS, &error);
 	sisci_assert(error);
+	offset += segmentSizeY;
 
-	SCICreateSegment(sdV, &localSegmentV, localSegmentIdV, segmentSizeV, NO_CALLBACK, NULL,
-			NO_FLAGS, &error);
+	image.U = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapU, offset, segmentSizeU, NULL, NO_FLAGS, &error);
 	sisci_assert(error);
+	offset += segmentSizeU;
 
-	SCIPrepareSegment(localSegmentY, localAdapterNo, NO_FLAGS, &error);
+	image.V = (uint8_t*) SCIMapLocalSegment(localSegment, &localMapV, offset, segmentSizeV, NULL, NO_FLAGS, &error);
 	sisci_assert(error);
+	offset += segmentSizeV;
 
-	SCIPrepareSegment(localSegmentU, localAdapterNo, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCIPrepareSegment(localSegmentV, localAdapterNo, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	unsigned int offset = 0; // TODO: OK?
-
-	image.Y = (uint8_t*) SCIMapLocalSegment(localSegmentY, &localMapY, offset, segmentSizeY, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	image.U = (uint8_t*) SCIMapLocalSegment(localSegmentU, &localMapU, offset, segmentSizeU, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	image.V = (uint8_t*) SCIMapLocalSegment(localSegmentV, &localMapV, offset, segmentSizeV, NULL, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCISetSegmentAvailable(localSegmentY, localAdapterNo, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCISetSegmentAvailable(localSegmentU, localAdapterNo, NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCISetSegmentAvailable(localSegmentV, localAdapterNo, NO_FLAGS, &error);
+	SCISetSegmentAvailable(localSegment, localAdapterNo, NO_FLAGS, &error);
 	sisci_assert(error);
 }
 
@@ -292,13 +261,7 @@ static void cleanup_SISCI()
 	SCIRemoveDataInterrupt(interruptFromReader, NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCISetSegmentUnavailable(localSegmentY, localAdapterNo, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCISetSegmentUnavailable(localSegmentU, localAdapterNo, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCISetSegmentUnavailable(localSegmentV, localAdapterNo, NO_FLAGS, &error);
+	SCISetSegmentUnavailable(localSegment, localAdapterNo, NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCIUnmapSegment(localMapY, NO_FLAGS, &error);
@@ -310,22 +273,10 @@ static void cleanup_SISCI()
 	SCIUnmapSegment(localMapV, NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveSegment(localSegmentY, NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment, NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveSegment(localSegmentU, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIRemoveSegment(localSegmentV, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIClose(sdY, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIClose(sdU, NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIClose(sdV, NO_FLAGS, &error);
+	SCIClose(sd, NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();
@@ -333,6 +284,8 @@ static void cleanup_SISCI()
 
 int main(int argc, char **argv)
 {
+	printf("her");
+
 	int c;
 
 	if (argc == 1)

@@ -7,7 +7,9 @@
 // Interrupts
 typedef enum {
 	READY_FOR_ORIG_TRANSFER = 10,
-	MORE_DATA_TRANSFERED = 15
+	MORE_DATA_TRANSFERED = 15,
+	ENCODED_FRAME_TRANSFERED = 20,
+	DATA_WRITTEN = 25
 } c63_interrupt;
 
 #endif /* COMMON_SISCI_H_ */

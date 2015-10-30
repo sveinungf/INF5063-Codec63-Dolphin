@@ -20,21 +20,15 @@
 
 #define INIT_WRITER 50
 
-static sci_desc_t sd_Y;
-static sci_desc_t sd_U;
-static sci_desc_t sd_V;
+static sci_desc_t sd;
 
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static unsigned int remoteNodeId;
 
-static unsigned int remoteSegmentId_Y;
-static unsigned int remoteSegmentId_U;
-static unsigned int remoteSegmentId_V;
+static unsigned int remoteSegmentId;
 
-static sci_remote_segment_t remoteSegment_Y;
-static sci_remote_segment_t remoteSegment_U;
-static sci_remote_segment_t remoteSegment_V;
+static sci_remote_segment_t remoteSegment;
 
 static unsigned int segmentSize_Y;
 static unsigned int segmentSize_U;
@@ -44,13 +38,9 @@ static volatile uint8_t *remote_Y;
 static volatile uint8_t *remote_U;
 static volatile uint8_t *remote_V;
 
-static sci_map_t remoteMap_Y;
-static sci_map_t remoteMap_U;
-static sci_map_t remoteMap_V;
+static sci_map_t remoteMap;
 
-sci_sequence_t sequence_Y;
-sci_sequence_t sequence_U;
-sci_sequence_t sequence_V;
+sci_sequence_t sequence;
 
 sci_local_interrupt_t local_data_interrupt;
 static unsigned int local_interrupt_number;
@@ -131,25 +121,14 @@ static sci_error_t init_SISCI() {
 		return error;
 	}
 
-	// Initialize descriptors
-	SCIOpen(&sd_Y, SCI_NO_FLAGS, &error);
+	SCIOpen(&sd, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
-	}
-
-	SCIOpen(&sd_U, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	SCIOpen(&sd_V, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-	return error;
 	}
 
 	// Create local interrupt descriptor(s) for communication between reader machine and processing machine
     local_interrupt_number = READY_FOR_ORIG_TRANSFER;
-	SCICreateInterrupt(sd_Y, &local_data_interrupt, localAdapterNo, &local_interrupt_number, NULL, NULL, SCI_FLAG_FIXED_INTNO, &error);
+	SCICreateInterrupt(sd, &local_data_interrupt, localAdapterNo, &local_interrupt_number, NULL, NULL, SCI_FLAG_FIXED_INTNO, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
 		return error;
@@ -158,7 +137,7 @@ static sci_error_t init_SISCI() {
 	// Connect reader node to remote interrupt at processing machine
 	printf("Connecting to interrupt on encoder...\n");
 	do {
-		SCIConnectDataInterrupt(sd_Y, &remote_interrupt, remoteNodeId, localAdapterNo, MORE_DATA_TRANSFERED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectDataInterrupt(sd, &remote_interrupt, remoteNodeId, localAdapterNo, MORE_DATA_TRANSFERED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	printf("Done\n");
@@ -182,57 +161,21 @@ sci_error_t init_SISCI_segments() {
 		return error;
 	}
 
-	remoteSegmentId_Y = (remoteNodeId << 16) | localNodeId | Y_COMPONENT;
-	remoteSegmentId_U = (remoteNodeId << 16) | localNodeId | U_COMPONENT;
-	remoteSegmentId_V = (remoteNodeId << 16) | localNodeId | V_COMPONENT;
+	remoteSegmentId = (remoteNodeId << 16) | (localNodeId << 8) | 0;
 
 	do {
-		SCIConnectSegment(sd_Y, &remoteSegment_Y, remoteNodeId, remoteSegmentId_Y, localAdapterNo,
+		SCIConnectSegment(sd, &remoteSegment, remoteNodeId, remoteSegmentId, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
-	do {
-		SCIConnectSegment(sd_U, &remoteSegment_U, remoteNodeId, remoteSegmentId_U, localAdapterNo,
-				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
+	unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
+	void* remote = SCIMapRemoteSegment(remoteSegment, &remoteMap, 0, totalSize, NULL, SCI_NO_FLAGS, &error);
+	remote_Y = remote;
+	remote_U = remote + segmentSize_Y;
+	remote_V = remote + segmentSize_Y + segmentSize_U;
 
-	do {
-		 SCIConnectSegment(sd_V, &remoteSegment_V, remoteNodeId, remoteSegmentId_V, localAdapterNo,
-				 SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-
-	int offset = 0;
-	remote_Y = SCIMapRemoteSegment(remoteSegment_Y, &remoteMap_Y, offset, segmentSize_Y, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	remote_U = SCIMapRemoteSegment(remoteSegment_U, &remoteMap_U, offset, segmentSize_U, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-			return error;
-	}
-
-	remote_V = SCIMapRemoteSegment(remoteSegment_V, &remoteMap_V, offset, segmentSize_V, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-			return error;
-	}
-
-	// Create sequences for data error checking
-	SCICreateMapSequence(remoteMap_Y, &sequence_Y, 0, &error);
+    SCICreateMapSequence(remoteMap, &sequence, 0, &error);
     if (error != SCI_ERR_OK) {
-    	fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
-    	return error;
-	}
-
-    SCICreateMapSequence(remoteMap_U, &sequence_U, 0, &error);
-    if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
-		return error;
-	}
-
-    SCICreateMapSequence(remoteMap_V, &sequence_V, 0, &error);
-	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
 		return error;
 	}
@@ -245,21 +188,13 @@ static sci_error_t cleanup_SISCI() {
 	SCIRemoveInterrupt(local_data_interrupt, SCI_NO_FLAGS, &error);
 	SCIDisconnectDataInterrupt(remote_interrupt, SCI_NO_FLAGS, &error);
 
-	SCIRemoveSequence(sequence_Y, SCI_NO_FLAGS, &error);
-	SCIRemoveSequence(sequence_U, SCI_NO_FLAGS, &error);
-	SCIRemoveSequence(sequence_V, SCI_NO_FLAGS, &error);
+	SCIRemoveSequence(sequence, SCI_NO_FLAGS, &error);
 
-	SCIUnmapSegment(remoteMap_Y, SCI_NO_FLAGS, &error);
-	SCIUnmapSegment(remoteMap_U, SCI_NO_FLAGS, &error);
-	SCIUnmapSegment(remoteMap_V, SCI_NO_FLAGS, &error);
+	SCIUnmapSegment(remoteMap, SCI_NO_FLAGS, &error);
 
-	SCIDisconnectSegment(remoteSegment_Y, SCI_NO_FLAGS, &error);
-	SCIDisconnectSegment(remoteSegment_U, SCI_NO_FLAGS, &error);
-	SCIDisconnectSegment(remoteSegment_V, SCI_NO_FLAGS, &error);
+	SCIDisconnectSegment(remoteSegment, SCI_NO_FLAGS, &error);
 
-	SCIClose(sd_Y, SCI_NO_FLAGS, &error);
-	SCIClose(sd_U, SCI_NO_FLAGS, &error);
-	SCIClose(sd_V, SCI_NO_FLAGS, &error);
+	SCIClose(sd, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -365,24 +300,27 @@ int main(int argc, char **argv) {
 		// Copy new frame to remote segment
 		printf("Sending frame %d to computation node\n", numframes);
 
-		int remoteOffset = 0;
-		SCIMemCpy(sequence_Y, image->Y, remoteMap_Y, remoteOffset, segmentSize_Y, SCI_FLAG_ERROR_CHECK, &error);
+		unsigned int remoteOffset = 0;
+		SCIMemCpy(sequence, image->Y, remoteMap, remoteOffset, segmentSize_Y, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
 			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
+		remoteOffset += segmentSize_Y;
 
-		SCIMemCpy(sequence_U, image->U, remoteMap_U, remoteOffset, segmentSize_U, SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(sequence, image->U, remoteMap, remoteOffset, segmentSize_U, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
 			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
+		remoteOffset += segmentSize_U;
 
-		SCIMemCpy(sequence_V, image->V, remoteMap_V, remoteOffset, segmentSize_V, SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(sequence, image->V, remoteMap, remoteOffset, segmentSize_V, SCI_FLAG_ERROR_CHECK, &error);
 		if(error != SCI_ERR_OK) {
 			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
+		remoteOffset += segmentSize_V;
 
 		printf("Done!\n");
 
@@ -415,17 +353,6 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Error during SISCI cleanup - error code: %x\n", error);
 		exit(EXIT_FAILURE);
 	}
-
-	//int i, j;
-	//for (i = 0; i < 2; ++i)
-	//{
-	//  printf("int freq[] = {");
-	//  for (j = 0; j < ARRAY_SIZE(frequencies[i]); ++j)
-	//  {
-	//    printf("%d, ", frequencies[i][j]);
-	//  }
-	//  printf("};\n");
-	//}
 
 	return EXIT_SUCCESS;
 }

@@ -16,7 +16,7 @@ else
 endif
 
 DIS_SRC = /home/inf5063-g03/exam3/DIS/src
-#DIS_SRC = /home/halvor/git/DIS/src
+
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/src

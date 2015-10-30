@@ -14,18 +14,24 @@
 #include "me.h"
 #include "tables.h"
 
-#include "sisci_types.h"
-#include "sisci_error.h"
 #include "sisci_api.h"
 
 #define SCI_NO_FLAGS 0
 #define SCI_NO_CALLBACK NULL
 
+#define READY_FOR_TRANSFER 30
+#define MORE_DATA_TRANSFERED 35
+
+#define INIT_WRITER 40
+
 
 // SISCI variables
-static sci_desc_t vd;
+static sci_desc_t sd_Y;
+static sci_desc_t sd_U;
+static sci_desc_t sd_V;
 
 static unsigned int localAdapterNo;
+
 static unsigned int localNodeId;
 static unsigned int remoteNodeId;
 
@@ -49,62 +55,28 @@ static sci_map_t localMap_Y;
 static sci_map_t localMap_U;
 static sci_map_t localMap_V;
 
-sci_local_interrupt_t local_interrupt_data;
-sci_remote_interrupt_t remote_data_interrupt;
+static sci_local_data_interrupt_t local_data_interrupt;
+static unsigned int localInterruptNumber;
+
+static sci_remote_interrupt_t remote_interrupt;
 
 
-static char *output_file, *input_file;
+static char *output_file;
 FILE *outfile;
-
-static int limit_numframes = 0;
 
 static uint32_t width;
 static uint32_t height;
+
+yuv_t *image;
+yuv_t *image2;
 
 /* getopt */
 extern int optind;
 extern char *optarg;
 
 
-static void c63_encode_image(struct c63_common *cm, yuv_t *image)
+struct c63_common* init_c63_enc()
 {
-  /* Advance to next frame */
-  destroy_frame(cm->refframe);
-  cm->refframe = cm->curframe;
-  cm->curframe = create_frame(cm, image);
-
-  /* Check if keyframe */
-  if (cm->framenum == 0 || cm->frames_since_keyframe == cm->keyframe_interval)
-  {
-    cm->curframe->keyframe = 1;
-    cm->frames_since_keyframe = 0;
-
-    fprintf(stderr, " (keyframe) ");
-  }
-  else { cm->curframe->keyframe = 0; }
-
-  if (!cm->curframe->keyframe)
-  {
-    /* Motion Estimation */
-    c63_motion_estimate(cm);
-
-    /* Motion Compensation */
-    c63_motion_compensate(cm);
-  }
-
-  /* Function dump_image(), found in common.c, can be used here to check if the
-     prediction is correct */
-
-  write_frame(cm);
-
-  ++cm->framenum;
-  ++cm->frames_since_keyframe;
-}
-
-struct c63_common* init_c63_enc(int width, int height)
-{
-  int i;
-
   /* calloc() sets allocated memory to zero */
   struct c63_common *cm = calloc(1, sizeof(struct c63_common));
 
@@ -129,6 +101,7 @@ struct c63_common* init_c63_enc(int width, int height)
   cm->keyframe_interval = 100;  // Distance between keyframes
 
   /* Initialize quantization tables */
+  int i;
   for (i = 0; i < 64; ++i)
   {
     cm->quanttbl[Y_COMPONENT][i] = yquanttbl_def[i] / (cm->qp / 10.0);
@@ -136,6 +109,7 @@ struct c63_common* init_c63_enc(int width, int height)
     cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
   }
 
+  // Set segment sizes
   segmentSize_Y = cm->ypw*cm->yph*sizeof(uint8_t);
   segmentSize_U = cm->upw*cm->uph*sizeof(uint8_t);
   segmentSize_V = cm->vpw*cm->vph*sizeof(uint8_t);
@@ -144,7 +118,7 @@ struct c63_common* init_c63_enc(int width, int height)
 }
 
 
-static sci_error_t init_SISCI(struct c63_common *cm) {
+static sci_error_t init_SISCI() {
 
 	// Initialisation of SISCI API
 	sci_error_t error;
@@ -153,7 +127,18 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 		return error;
 	}
 
-	SCIOpen(&vd, SCI_NO_FLAGS, &error);
+	// Initialize descriptors
+	SCIOpen(&sd_Y, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	SCIOpen(&sd_U, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	SCIOpen(&sd_V, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
@@ -163,22 +148,60 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 		return error;
 	}
 
+	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
+	localInterruptNumber = MORE_DATA_TRANSFERED;
+	SCICreateDataInterrupt(sd_Y, &local_data_interrupt, localAdapterNo, &localInterruptNumber, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
+		return error;
+	}
+
+	// Connect reader node to remote interrupt at processing machine
+	do {
+		SCIConnectInterrupt(sd_Y, &remote_interrupt, remoteNodeId, localAdapterNo, READY_FOR_TRANSFER, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
+
+	return SCI_ERR_OK;
+
+}
+
+static inline sci_error_t receive_width_and_height() {
+	printf("Waiting for width and height from encoder...\n");
+	uint32_t widthAndHeight[2];
+	unsigned int length = 2*sizeof(uint32_t);
+
+	sci_error_t error;
+	SCIWaitForDataInterrupt(local_data_interrupt, &widthAndHeight, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	if(error != SCI_ERR_OK) {
+		return error;
+	}
+
+	width = widthAndHeight[0];
+	height = widthAndHeight[1];
+
+	printf("Done\n");
+	return SCI_ERR_OK;
+}
+
+static sci_error_t init_SISCI_segments() {
+	sci_error_t error;
+
 	localSegmentId_Y = (localNodeId << 16) | remoteNodeId | Y_COMPONENT;
 	localSegmentId_U = (localNodeId << 16) | remoteNodeId | U_COMPONENT;
 	localSegmentId_V = (localNodeId << 16) | remoteNodeId | V_COMPONENT;
 
 	// Create local segments for the processing machine to copy into
-	SCICreateSegment(vd, &localSegment_Y, localSegmentId_Y, segmentSize_Y, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sd_Y, &localSegment_Y, localSegmentId_Y, segmentSize_Y, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_U, localSegmentId_U, segmentSize_U, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sd_U, &localSegment_U, localSegmentId_U, segmentSize_U, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
 
-	SCICreateSegment(vd, &localSegment_V, localSegmentId_V, segmentSize_V, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sd_V, &localSegment_V, localSegmentId_V, segmentSize_V, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
 		return error;
 	}
@@ -232,25 +255,13 @@ static sci_error_t init_SISCI(struct c63_common *cm) {
 		return error;
 	}
 
-	// Create local interrupt descriptor(s) for communication between processing machine and writer machine
-	SCICreateInterrupt(vd, &local_interrupt_data, localAdapterNo, 0, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
-
-	// Connect reader node to remote interrupt at processing machine
-	do {
-		SCIConnectInterrupt(vd, &remote_data_interrupt, remoteNodeId, localAdapterNo, 1, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
 	return SCI_ERR_OK;
 }
 
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
-	SCIRemoveInterrupt(local_interrupt_data, SCI_NO_FLAGS, &error);
-	SCIDisconnectInterrupt(remote_data_interrupt, SCI_NO_FLAGS, &error);
+	SCIRemoveDataInterrupt(local_data_interrupt, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(remote_interrupt, SCI_NO_FLAGS, &error);
 
 	SCIUnmapSegment(localMap_Y, SCI_NO_FLAGS, &error);
 	SCIUnmapSegment(localMap_U, SCI_NO_FLAGS, &error);
@@ -260,7 +271,9 @@ static sci_error_t cleanup_SISCI() {
 	SCIRemoveSegment(localSegment_U, SCI_NO_FLAGS, &error);
 	SCIRemoveSegment(localSegment_V, SCI_NO_FLAGS, &error);
 
-	SCIClose(vd, SCI_NO_FLAGS, &error);
+	SCIClose(sd_Y, SCI_NO_FLAGS, &error);
+	SCIClose(sd_U, SCI_NO_FLAGS, &error);
+	SCIClose(sd_V, SCI_NO_FLAGS, &error);
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -275,12 +288,9 @@ void free_c63_enc(struct c63_common* cm)
 
 static void print_help()
 {
-  printf("Usage: ./c63enc [options] input_file\n");
+  printf("Usage: ./c63enc [options] output_file\n");
   printf("Commandline options:\n");
-  printf("  -h                             Height of images to compress\n");
-  printf("  -w                             Width of images to compress\n");
   printf("  -o                             Output file (.c63)\n");
-  printf("  [-f]                           Limit number of frames to encode\n");
   printf("\n");
 
   exit(EXIT_FAILURE);
@@ -289,30 +299,26 @@ static void print_help()
 int main(int argc, char **argv)
 {
   int c;
-  yuv_t *image;
 
   if (argc == 1) { print_help(); }
 
-  while ((c = getopt(argc, argv, "h:w:o:f:i:")) != -1)
+  while ((c = getopt(argc, argv, "a:r:o:")) != -1)
   {
-    switch (c)
-    {
-      case 'h':
-        height = atoi(optarg);
-        break;
-      case 'w':
-        width = atoi(optarg);
-        break;
-      case 'o':
-        output_file = optarg;
-        break;
-      case 'f':
-        limit_numframes = atoi(optarg);
-        break;
-      default:
-        print_help();
-        break;
-    }
+	  switch (c)
+	  {
+	  	  case 'a':
+	  		  localAdapterNo = atoi(optarg);
+	  		  break;
+	  	  case 'r':
+	  		  remoteNodeId = atoi(optarg);
+	  		  break;
+	  	  case 'o':
+	  		  output_file = optarg;
+	  		  break;
+	  	  default:
+	  		  print_help();
+	  		  break;
+	  }
   }
 
   if (optind >= argc)
@@ -329,42 +335,62 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
 
-  struct c63_common *cm = init_c63_enc(width, height);
+  sci_error_t error;
+  error = init_SISCI();
+  if (error != SCI_ERR_OK) {
+	fprintf(stderr,"init_SISCI failed - Error code 0x%x\n", error);
+	exit(EXIT_FAILURE);
+  }
+
+  error = receive_width_and_height();
+  if (error != SCI_ERR_OK) {
+  	fprintf(stderr,"receive_width_and_height failed - Error code 0x%x\n", error);
+  	exit(EXIT_FAILURE);
+}
+
+  struct c63_common *cm = init_c63_enc();
   cm->e_ctx.fp = outfile;
 
-  input_file = argv[optind];
-
-  if (limit_numframes) { printf("Limited to %d frames.\n", limit_numframes); }
-
-  FILE *infile = fopen(input_file, "rb");
-
-  if (infile == NULL)
-  {
-    perror("fopen");
-    exit(EXIT_FAILURE);
-  }
+  init_SISCI_segments();
 
   /* Encode input frames */
   int numframes = 0;
 
+  uint8_t done = 0;
+  int length = 1;
   while (1)
   {
-	/*
-    free(image->Y);
-    free(image->U);
-    free(image->V);
-    free(image);
-	*/
-    printf("Done!\n");
+	  printf("Waiting for data from encoder...\n");
+	  sci_error_t error;
+	  SCIWaitForDataInterrupt(local_data_interrupt, &done, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	  if(error != SCI_ERR_OK) {
+		  return error;
+	  }
+	  printf("Done!\n");
 
-    ++numframes;
+	  if(done) {
+		  break;
+	  }
 
-    if (limit_numframes && numframes >= limit_numframes) { break; }
+	  //cm->curframe->residuals->Ydct = segment_Y[residuals_Ydct]
+	  write_frame(cm);
+	  ++numframes;
+
+	  SCITriggerInterrupt(remote_interrupt, SCI_NO_FLAGS, &error);
+	  if (error != SCI_ERR_OK) {
+		  fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
+		  exit(EXIT_FAILURE);
+	  }
   }
 
   free_c63_enc(cm);
   fclose(outfile);
-  fclose(infile);
+
+  error = cleanup_SISCI();
+  if (error != SCI_ERR_OK) {
+	fprintf(stderr, "Error during SISCI cleanup - error code: %x\n", error);
+	exit(EXIT_FAILURE);
+  }
 
   //int i, j;
   //for (i = 0; i < 2; ++i)

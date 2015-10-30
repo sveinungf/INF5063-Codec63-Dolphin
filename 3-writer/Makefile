@@ -1,20 +1,23 @@
 CC = gcc
-NVCC = nvcc
-
-CCFLAGS = -Wall
-NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
-PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
-LDFLAGS = -lm
 
 DEBUG ?= 0
 
+VIDEO ?= 0
+FRAMES ?= 0
+
+NODE_ID_ENCODER ?= 28
+LOCAL_ADAPTER_NO ?= 0
+
+CCFLAGS = -Wall
+LDFLAGS = -lm
+
 ifeq ($(DEBUG),1)
 	CCFLAGS += -Og -g -pg -DSHOW_CYCLES
-	NVCCFLAGS += -G -lineinfo
 else
 	CCFLAGS += -O3
 endif
 
+# SISCI
 DIS_SRC = /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
@@ -23,15 +26,6 @@ INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 
 CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
-
-ALL_NVCCFLAGS = $(NVCCFLAGS)
-ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
-ALL_NVCCFLAGS += $(addprefix -Xptxas ,$(PTXFLAGS))
-
-ALL_LDFLAGS = $(addprefix -Xlinker ,$(LDFLAGS))
-
-VIDEO ?= 0
-FRAMES ?= 0
 
 ifeq ($(VIDEO),0)
 	WIDTH = 352
@@ -53,25 +47,23 @@ else ifeq ($(VIDEO),2)
 	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
 endif
 
-all: c63enc #c63dec c63pred
+all: c63write #c63dec c63pred
 
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
-%.o: %.cu
-	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
-
-c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o
-	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
+	
+c63write: c63write.o dsp.o tables.o io.o c63_write.o common.o me.o
+	$(CC) $^ $(LDFLAGS) -o $@
 c63dec: c63dec.c dsp.o tables.o io.o common.o me.o
-	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
+	$(CC) $^ $(LDFLAGS) -o $@
 c63pred: c63dec.c dsp.o tables.o io.o common.o me.o
-	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -DC63_PRED -o $@ $^
+	$(CC) $^ $(LDFLAGS) -DC63_PRED -o $@
 
 clean:
-	rm -f *.o c63enc temp/* $(OUTPUT_VIDEO)
+	rm -f *.o c63write temp/* $(OUTPUT_VIDEO)
 
-encode: c63enc
-	./c63enc -w $(WIDTH) -h $(HEIGHT) -f $(FRAMES) -o temp/test.c63 $(INPUT_VIDEO)
+write: c63write
+	./c63write -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_ENCODER) -o temp/test.c63
 decode:
 	./c63dec temp/test.c63 $(OUTPUT_VIDEO)
 

@@ -67,7 +67,7 @@ clean:
 	rm -f *.o c63enc temp/* $(OUTPUT_VIDEO)
 
 encode: c63enc
-	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -o temp/test.c63
+	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)
 decode:
 	./c63dec temp/test.c63 $(OUTPUT_VIDEO)
 

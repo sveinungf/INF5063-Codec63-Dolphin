@@ -72,7 +72,7 @@ struct macroblock
 {
   int use_mv;
   int8_t mv_x, mv_y;
-};
+}__attribute__((packed));
 
 struct frame
 {

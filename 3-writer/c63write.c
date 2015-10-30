@@ -10,8 +10,6 @@
 
 #include "c63.h"
 #include "c63_write.h"
-#include "common.h"
-#include "me.h"
 #include "tables.h"
 
 #include "sisci_api.h"

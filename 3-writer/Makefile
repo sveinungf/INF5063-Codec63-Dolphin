@@ -47,18 +47,14 @@ else ifeq ($(VIDEO),2)
 	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
 endif
 
-all: c63write #c63dec c63pred
+all: c63write
 
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 	
-c63write: c63write.o dsp.o tables.o io.o c63_write.o common.o me.o
+c63write: c63write.o tables.o io.o c63_write.o
 	$(CC) $^ $(LDFLAGS) -o $@
-c63dec: c63dec.c dsp.o tables.o io.o common.o me.o
-	$(CC) $^ $(LDFLAGS) -o $@
-c63pred: c63dec.c dsp.o tables.o io.o common.o me.o
-	$(CC) $^ $(LDFLAGS) -DC63_PRED -o $@
-
+	
 clean:
 	rm -f *.o c63write temp/* $(OUTPUT_VIDEO)
 

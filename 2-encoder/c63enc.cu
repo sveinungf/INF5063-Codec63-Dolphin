@@ -12,7 +12,6 @@
 
 extern "C" {
 #include "c63.h"
-#include "c63_write.h"
 #include "common.h"
 #include "common_sisci.h"
 #include "me.h"

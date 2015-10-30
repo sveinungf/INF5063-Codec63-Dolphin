@@ -28,31 +28,28 @@ static unsigned int remoteNodeId;
 
 static unsigned int remoteSegmentId;
 
+static sci_local_segment_t localSegment;
 static sci_remote_segment_t remoteSegment;
+
+static sci_dma_queue_t dmaQueue;
 
 static unsigned int segmentSize_Y;
 static unsigned int segmentSize_U;
 static unsigned int segmentSize_V;
 
-static volatile uint8_t *remote_Y;
-static volatile uint8_t *remote_U;
-static volatile uint8_t *remote_V;
+static sci_map_t localMap;
+static volatile uint8_t* local_Y;
+static volatile uint8_t* local_U;
+static volatile uint8_t* local_V;
 
-static sci_map_t remoteMap;
-
-sci_sequence_t sequence;
-
-sci_local_interrupt_t local_data_interrupt;
+static sci_local_interrupt_t local_data_interrupt;
 static unsigned int local_interrupt_number;
 
-sci_remote_data_interrupt_t remote_interrupt;
+static sci_remote_data_interrupt_t remote_interrupt;
 
 static char *input_file;
 
 static int limit_numframes = 0;
-
-yuv_t *image;
-yuv_t *image2;
 
 static uint32_t width;
 static uint32_t height;
@@ -68,14 +65,14 @@ static int read_yuv(FILE *file) {
 
 	/* Read Y. The size of Y is the same as the size of the image. The indices
 	 represents the color component (0 is Y, 1 is U, and 2 is V) */
-	len += fread(image->Y, 1, width * height, file);
+	len += fread((void*) local_Y, 1, width * height, file);
 
 	/* Read U. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y
 	 because (height/2)*(width/2) = (height*width)/4. */
-	len += fread(image->U, 1, (width * height) / 4, file);
+	len += fread((void*) local_U, 1, (width * height) / 4, file);
 
 	/* Read V. Given 4:2:0 chroma sub-sampling, the size is 1/4 of Y. */
-	len += fread(image->V, 1, (width * height) / 4, file);
+	len += fread((void*) local_V, 1, (width * height) / 4, file);
 
 	if (ferror(file)) {
 		perror("ferror");
@@ -105,11 +102,6 @@ static void init_c63_enc() {
 	segmentSize_Y = ypw*yph*sizeof(uint8_t);
 	segmentSize_U = upw*uph*sizeof(uint8_t);
 	segmentSize_V = vpw*vph*sizeof(uint8_t);
-
-	image = malloc(sizeof(*image));
-	image->Y = malloc(segmentSize_Y);
-	image->U = malloc(segmentSize_U);
-	image->V = malloc(segmentSize_V);
 }
 
 static sci_error_t init_SISCI() {
@@ -123,6 +115,13 @@ static sci_error_t init_SISCI() {
 
 	SCIOpen(&sd, SCI_NO_FLAGS, &error);
 	if (error != SCI_ERR_OK) {
+		return error;
+	}
+
+	unsigned int maxEntries = 1;
+	SCICreateDMAQueue(sd, &dmaQueue, localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
+	if (error != SCI_ERR_OK) {
+		fprintf(stderr, "SCICreateDMAQueue failed - Error code 0x%x\n", error);
 		return error;
 	}
 
@@ -161,6 +160,35 @@ sci_error_t init_SISCI_segments() {
 		return error;
 	}
 
+	unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
+	unsigned int localSegmentId = (localNodeId << 16) | (remoteNodeId << 8) | 0;
+
+	SCICreateSegment(sd, &localSegment, localSegmentId, totalSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+    if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCICreateSegment failed - Error code 0x%x\n", error);
+		return error;
+	}
+
+    SCIPrepareSegment(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
+    if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCIPrepareSegment failed - Error code 0x%x\n", error);
+		return error;
+	}
+
+	void* buffer = SCIMapLocalSegment(localSegment, &localMap, 0, totalSize, NULL, SCI_NO_FLAGS, &error);
+    if (error != SCI_ERR_OK) {
+		fprintf(stderr,"SCIMapLocalSegment failed - Error code 0x%x\n", error);
+		return error;
+	}
+
+    unsigned int offset = 0;
+    local_Y = (uint8_t*) buffer + offset;
+    offset += segmentSize_Y;
+    local_U = (uint8_t*) buffer + offset;
+    offset += segmentSize_U;
+    local_V = (uint8_t*) buffer + offset;
+    offset += segmentSize_V;
+
 	remoteSegmentId = (remoteNodeId << 16) | (localNodeId << 8) | 0;
 
 	do {
@@ -168,33 +196,25 @@ sci_error_t init_SISCI_segments() {
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
-	unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
-	void* remote = SCIMapRemoteSegment(remoteSegment, &remoteMap, 0, totalSize, NULL, SCI_NO_FLAGS, &error);
-	remote_Y = remote;
-	remote_U = remote + segmentSize_Y;
-	remote_V = remote + segmentSize_Y + segmentSize_U;
-
-    SCICreateMapSequence(remoteMap, &sequence, 0, &error);
-    if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateMapSequence failed - Error code 0x%x\n", error);
-		return error;
-	}
-
 	return SCI_ERR_OK;
 }
 
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
-	SCIRemoveInterrupt(local_data_interrupt, SCI_NO_FLAGS, &error);
-	SCIDisconnectDataInterrupt(remote_interrupt, SCI_NO_FLAGS, &error);
-
-	SCIRemoveSequence(sequence, SCI_NO_FLAGS, &error);
-
-	SCIUnmapSegment(remoteMap, SCI_NO_FLAGS, &error);
 
 	SCIDisconnectSegment(remoteSegment, SCI_NO_FLAGS, &error);
 
+	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
+
+	SCIDisconnectDataInterrupt(remote_interrupt, SCI_NO_FLAGS, &error);
+
+	SCIRemoveInterrupt(local_data_interrupt, SCI_NO_FLAGS, &error);
+
+	SCIRemoveDMAQueue(dmaQueue, SCI_NO_FLAGS, &error);
+
 	SCIClose(sd, SCI_NO_FLAGS, &error);
+
 	SCITerminate();
 
 	return SCI_ERR_OK;
@@ -294,33 +314,23 @@ int main(int argc, char **argv) {
 			do {
 				SCIWaitForInterrupt(local_data_interrupt, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 			} while (error != SCI_ERR_OK);
-
 		}
 
 		// Copy new frame to remote segment
 		printf("Sending frame %d to computation node\n", numframes);
 
-		unsigned int remoteOffset = 0;
-		SCIMemCpy(sequence, image->Y, remoteMap, remoteOffset, segmentSize_Y, SCI_FLAG_ERROR_CHECK, &error);
+		unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
+		SCIStartDmaTransfer(dmaQueue, localSegment, remoteSegment, 0, totalSize, 0, NULL, NULL, SCI_NO_FLAGS, &error);
 		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on Y - Error code 0x%x\n", error);
+			fprintf(stderr,"SCIStartDmaTransfer failed - Error code 0x%x\n", error);
 			exit(EXIT_FAILURE);
 		}
-		remoteOffset += segmentSize_Y;
 
-		SCIMemCpy(sequence, image->U, remoteMap, remoteOffset, segmentSize_U, SCI_FLAG_ERROR_CHECK, &error);
-		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on U - Error code 0x%x\n", error);
-			exit(EXIT_FAILURE);
-		}
-		remoteOffset += segmentSize_U;
-
-		SCIMemCpy(sequence, image->V, remoteMap, remoteOffset, segmentSize_V, SCI_FLAG_ERROR_CHECK, &error);
-		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIMemCpy failed on V - Error code 0x%x\n", error);
-			exit(EXIT_FAILURE);
-		}
-		remoteOffset += segmentSize_V;
+		SCIWaitForDMAQueue(dmaQueue, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	    if (error != SCI_ERR_OK) {
+	        fprintf(stderr,"SCIWaitForDMAQueue failed - Error code 0x%x\n",error);
+	        return error;
+	    }
 
 		printf("Done!\n");
 
@@ -339,13 +349,10 @@ int main(int argc, char **argv) {
 			break;
 		}
 	}
+
 	// Signal computation node that there are no more frames to be encoded
 	SCITriggerDataInterrupt(remote_interrupt, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 
-	free(image->Y);
-	free(image->U);
-	free(image->V);
-	free(image);
 	fclose(infile);
 
 	error = cleanup_SISCI();

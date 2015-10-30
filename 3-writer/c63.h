@@ -44,6 +44,7 @@
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
+
 struct yuv
 {
   uint8_t *Y;
@@ -72,7 +73,7 @@ struct macroblock
 {
   int use_mv;
   int8_t mv_x, mv_y;
-};
+}__attribute__((packed));
 
 struct frame
 {

@@ -49,6 +49,8 @@ else ifeq ($(VIDEO),2)
 	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
 endif
 
+C63_FILE = ../temp/test.c63
+
 all: c63enc
 
 %.o: %.c
@@ -60,12 +62,12 @@ c63enc: c63enc.o dsp.o tables.o common.o me.o
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:
-	rm -f *.o c63enc temp/* $(OUTPUT_VIDEO)
+	rm -f *.o c63enc $(OUTPUT_VIDEO)
 
 encode: c63enc
 	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)
 decode:
-	./c63dec temp/test.c63 $(OUTPUT_VIDEO)
+	./c63dec $(C63_FILE) $(OUTPUT_VIDEO)
 
 vlc:
 	vlc --rawvid-width $(WIDTH) --rawvid-height $(HEIGHT) --rawvid-chroma I420 $(OUTPUT_VIDEO)
@@ -73,7 +75,7 @@ vlc:
 gprof:
 	gprof c63enc gmon.out -b
 nvprof:
-	nvprof ./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -o temp/test.c63
+	nvprof ./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)
 
 cmp:
 	@cmp --silent -n "$$(wc -c < $(OUTPUT_VIDEO))" $(OUTPUT_VIDEO) $(REFERENCE_VIDEO) && echo "test == reference :D" || echo "test != reference :("

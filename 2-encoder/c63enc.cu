@@ -10,10 +10,12 @@
 #include "sisci_api.h"
 #include "sisci_error.h"
 
+#include "../common/sisci_common.h"
+#include "../common/sisci_errchk.h"
+
 extern "C" {
 #include "c63.h"
 #include "common.h"
-#include "common_sisci.h"
 #include "me.h"
 #include "tables.h"
 }
@@ -165,45 +167,21 @@ static void print_help()
 	exit(EXIT_FAILURE);
 }
 
-#define SISCI_ERROR_CHECK
-
-#ifdef SISCI_ERROR_CHECK
-#define sisci_assert(error) { sisci_check_error(error, __FILE__, __LINE__, true); }
-#define sisci_check(error) { sisci_check_error(error, __FILE__, __LINE__, false); }
-#else
-#define sisci_assert(error) {}
-#define sisci_check(error) {}
-#endif
-
-inline static void sisci_check_error(sci_error_t error, const char* file, int line, bool terminate)
-{
-	if (error != SCI_ERR_OK)
-	{
-		fprintf(stderr, "SISCI error code 0x%x at %s, line %d", error, file, line);
-
-		if (terminate)
-		{
-			SCITerminate();
-			exit(EXIT_FAILURE);
-		}
-	}
-}
-
 static void init_SISCI()
 {
 	sci_error_t error;
 
-	SCIInitialize(NO_FLAGS, &error);
+	SCIInitialize(SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIOpen(&sd, NO_FLAGS, &error);
+	SCIOpen(&sd, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIGetLocalNodeId(localAdapterNo, &localNodeId, NO_FLAGS, &error);
+	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Interrupts from the reader
-	interruptFromReaderNo = MORE_DATA_TRANSFERED;
+	interruptFromReaderNo = MORE_DATA_TRANSFERRED;
 	SCICreateDataInterrupt(sd, &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
 			NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
@@ -213,7 +191,7 @@ static void init_SISCI()
 	do
 	{
 		SCIConnectInterrupt(sd, &interruptToReader, readerNodeId, localAdapterNo,
-				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
 	printf("Done!\n");
@@ -230,7 +208,7 @@ static void init_SISCI()
 	do
 	{
 		SCIConnectDataInterrupt(sd, &interruptToWriter, writerNodeId, localAdapterNo,
-				ENCODED_FRAME_TRANSFERED, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				ENCODED_FRAME_TRANSFERRED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
 	printf("Done!\n");
@@ -242,7 +220,7 @@ static void receive_width_and_height(int& width, int& height)
 	uint32_t widthAndHeight[2];
 	unsigned int length = 2 * sizeof(uint32_t);
 	SCIWaitForDataInterrupt(interruptFromReader, &widthAndHeight, &length, SCI_INFINITE_TIMEOUT,
-			NO_FLAGS, &error);
+			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	width = widthAndHeight[0];
@@ -252,7 +230,7 @@ static void receive_width_and_height(int& width, int& height)
 
 static void send_width_and_height(uint32_t width, uint32_t height) {
 	uint32_t widthAndHeight[2] = {width, height};
-	SCITriggerDataInterrupt(interruptToWriter, (void*) &widthAndHeight, 2*sizeof(uint32_t), NO_FLAGS, &error);
+	SCITriggerDataInterrupt(interruptToWriter, (void*) &widthAndHeight, 2*sizeof(uint32_t), SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
 
@@ -266,12 +244,12 @@ static void init_SISCI_segments(struct c63_common* cm)
 
 	unsigned int segmentSize = segmentSizeY + segmentSizeU + segmentSizeV;
 
-	SCICreateSegment(sd, &localSegment, localSegmentId, segmentSize, NO_CALLBACK, NULL, NO_FLAGS, &error);
+	SCICreateSegment(sd, &localSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIPrepareSegment(localSegment, localAdapterNo, NO_FLAGS, &error);
+	SCIPrepareSegment(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
 
-	void* buffer = SCIMapLocalSegment(localSegment, &localMap, 0, segmentSize, NULL, NO_FLAGS, &error);
+	void* buffer = SCIMapLocalSegment(localSegment, &localMap, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	unsigned int offset = 0;
@@ -283,7 +261,7 @@ static void init_SISCI_segments(struct c63_common* cm)
 	image.V = (uint8_t*) buffer + offset;
 	offset += segmentSizeV;
 
-	SCISetSegmentAvailable(localSegment, localAdapterNo, NO_FLAGS, &error);
+	SCISetSegmentAvailable(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 
@@ -292,14 +270,14 @@ static void init_SISCI_segments(struct c63_common* cm)
 
 	do {
 		SCIConnectSegment(sd, &remoteSegment, writerNodeId, remoteSegmentId, localAdapterNo,
-				NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	// Set segment size
 	uint32_t remoteSegmentSize = SCIGetRemoteSegmentSize(remoteSegment);
 
 	unsigned int offsett = 0;
-	SCIMapRemoteSegment(remoteSegment, &remoteMap, offsett, remoteSegmentSize, NULL, NO_FLAGS, &error);
+	SCIMapRemoteSegment(remoteSegment, &remoteMap, offsett, remoteSegmentSize, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
     SCICreateMapSequence(remoteMap, &writer_sequence, 0, &error);
@@ -319,35 +297,35 @@ static void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	SCIDisconnectInterrupt(interruptToReader, NO_FLAGS, &error);
+	SCIDisconnectInterrupt(interruptToReader, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveDataInterrupt(interruptFromReader, NO_FLAGS, &error);
+	SCIRemoveDataInterrupt(interruptFromReader, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIDisconnectDataInterrupt(interruptToWriter, NO_FLAGS, &error);
+	SCIDisconnectDataInterrupt(interruptToWriter, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	do {
-		SCIRemoveInterrupt(interruptFromWriter, NO_FLAGS, &error);
+		SCIRemoveInterrupt(interruptFromWriter, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
-	SCISetSegmentUnavailable(localSegment, localAdapterNo, NO_FLAGS, &error);
+	SCISetSegmentUnavailable(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIUnmapSegment(localMap, NO_FLAGS, &error);
+	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveSegment(localSegment, NO_FLAGS, &error);
+	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIUnmapSegment(remoteMap, NO_FLAGS, &error);
+	SCIUnmapSegment(remoteMap, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIDisconnectSegment(remoteSegment, NO_FLAGS, &error);
+	SCIDisconnectSegment(remoteSegment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIClose(sd, NO_FLAGS, &error);
+	SCIClose(sd, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();
@@ -408,14 +386,14 @@ int main(int argc, char **argv)
 	while (1)
 	{
 		printf("Waiting for interrupt...\n");
-		SCIWaitForDataInterrupt(interruptFromReader, &done, &done_size, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+		SCIWaitForDataInterrupt(interruptFromReader, &done, &done_size, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		if (done)
 		{
 			printf("DONE from reader\n");
 			// Send interrupt to writer signalling that encoding has been finished
-			SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), NO_FLAGS, &error);
+			SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 			sisci_assert(error);
 			break;
 		}
@@ -426,7 +404,7 @@ int main(int argc, char **argv)
 		if (numframes != 0) {
 			// Wait for interrupt from writer
 			do {
-				SCIWaitForInterrupt(interruptFromWriter, SCI_INFINITE_TIMEOUT, NO_FLAGS, &error);
+				SCIWaitForInterrupt(interruptFromWriter, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 			} while (error != SCI_ERR_OK);
 		}
 
@@ -454,7 +432,7 @@ int main(int argc, char **argv)
 		printf("Done!\n");
 
 		// Send interrupt to writer signalling the data has been transfered
-		SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), NO_FLAGS, &error);
+		SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		++cm->framenum;
@@ -465,7 +443,7 @@ int main(int argc, char **argv)
 		++numframes;
 
 		// Reader can transfer next frame
-		SCITriggerInterrupt(interruptToReader, NO_FLAGS, &error);
+		SCITriggerInterrupt(interruptToReader, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
 

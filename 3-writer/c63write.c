@@ -8,17 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../common/sisci_common.h"
 #include "c63.h"
 #include "c63_write.h"
 #include "tables.h"
 
 #include "sisci_api.h"
-
-#define SCI_NO_FLAGS 0
-#define SCI_NO_CALLBACK NULL
-
-#define ENCODED_FRAME_TRANSFERED 20
-#define DATA_WRITTEN 25
 
 // SISCI variables
 static sci_desc_t sd;
@@ -112,7 +107,7 @@ static sci_error_t init_SISCI() {
 	}
 
 	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
-	interruptFromEncoderNo = ENCODED_FRAME_TRANSFERED;
+	interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED;
 	SCICreateDataInterrupt(sd, &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
 	if (error != SCI_ERR_OK) {
 		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);

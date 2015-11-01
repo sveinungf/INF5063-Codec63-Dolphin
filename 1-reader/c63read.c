@@ -8,17 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../common/sisci_common.h"
 #include "c63.h"
 
 #include "sisci_api.h"
-
-#define SCI_NO_FLAGS 0
-#define SCI_NO_CALLBACK NULL
-
-#define READY_FOR_ORIG_TRANSFER 10
-#define MORE_DATA_TRANSFERED 15
-
-#define INIT_WRITER 50
 
 static sci_desc_t sd;
 
@@ -136,7 +129,7 @@ static sci_error_t init_SISCI() {
 	// Connect reader node to remote interrupt at processing machine
 	printf("Connecting to interrupt on encoder...\n");
 	do {
-		SCIConnectDataInterrupt(sd, &remote_interrupt, remoteNodeId, localAdapterNo, MORE_DATA_TRANSFERED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectDataInterrupt(sd, &remote_interrupt, remoteNodeId, localAdapterNo, MORE_DATA_TRANSFERRED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	printf("Done\n");

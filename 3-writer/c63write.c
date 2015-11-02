@@ -330,16 +330,5 @@ int main(int argc, char **argv)
 	exit(EXIT_FAILURE);
   }
 
-  //int i, j;
-  //for (i = 0; i < 2; ++i)
-  //{
-  //  printf("int freq[] = {");
-  //  for (j = 0; j < ARRAY_SIZE(frequencies[i]); ++j)
-  //  {
-  //    printf("%d, ", frequencies[i][j]);
-  //  }
-  //  printf("};\n");
-  //}
-
   return EXIT_SUCCESS;
 }

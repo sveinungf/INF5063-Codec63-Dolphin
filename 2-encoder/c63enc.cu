@@ -8,11 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <utility>
-#include "sisci_api.h"
-#include "sisci_error.h"
 
-#include "../common/sisci_common.h"
-#include "../common/sisci_errchk.h"
 #include "c63.h"
 #include "common.h"
 #include "me.h"

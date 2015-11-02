@@ -12,4 +12,9 @@ typedef enum {
 	DATA_WRITTEN = 25
 } c63_interrupt;
 
+// Segments
+typedef enum {
+	SEGMENT_ENCODER_IMAGE
+} c63_segment_encoder;
+
 #endif /* SISCI_COMMON_H_ */

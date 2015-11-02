@@ -182,7 +182,7 @@ sci_error_t init_SISCI_segments() {
     local_V = (uint8_t*) buffer + offset;
     offset += segmentSize_V;
 
-	remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8) | 0;
+	remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8) | SEGMENT_ENCODER_IMAGE;
 
 	do {
 		SCIConnectSegment(sd, &remoteSegment, encoderNodeId, remoteSegmentId, localAdapterNo,

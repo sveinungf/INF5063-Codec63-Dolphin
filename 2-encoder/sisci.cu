@@ -113,7 +113,7 @@ void cleanup_SISCI()
 yuv_t init_image_segment(struct c63_common* cm)
 {
 	yuv_t image;
-	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | 0; // TODO enum elns
+	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | SEGMENT_ENCODER_IMAGE;
 
 	unsigned int segmentSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
 	unsigned int segmentSizeU = cm->upw * cm->uph * sizeof(uint8_t);

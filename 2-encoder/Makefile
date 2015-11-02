@@ -3,9 +3,6 @@ NVCC = nvcc
 
 DEBUG ?= 0
 
-VIDEO ?= 0
-FRAMES ?= 0
-
 NODE_ID_READER ?= 4
 NODE_ID_WRITER ?= 8
 LOCAL_ADAPTER_NO ?= 0
@@ -39,17 +36,15 @@ ALL_NVCCFLAGS += $(addprefix -Xptxas ,$(PTXFLAGS))
 ALL_LDFLAGS = $(addprefix -Xlinker ,$(LDFLAGS))
 
 ifeq ($(VIDEO),0)
-	OUTPUT_VIDEO = ~/yuv/test/foreman.yuv
-	REFERENCE_VIDEO = ~/yuv/reference/foreman.yuv
+	REFERENCE_C63 = ~/c63/reference/foreman.c63
 else ifeq ($(VIDEO),1)
-	OUTPUT_VIDEO = ~/yuv/test/foreman_4k.yuv
-	REFERENCE_VIDEO = ~/yuv/reference/foreman_4k.yuv
+	REFERENCE_C63 = ~/c63/reference/foreman_4k.yuv
 else ifeq ($(VIDEO),2)
-	OUTPUT_VIDEO = ~/yuv/test/tractor.yuv
-	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
+	REFERENCE_C63 = ~/c63/reference/tractor.c63
 endif
 
 C63_FILE = ../temp/test.c63
+OUTPUT_VIDEO = ../temp/output.yuv
 
 all: c63enc
 
@@ -78,4 +73,5 @@ nvprof:
 	nvprof ./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)
 
 cmp:
-	@cmp --silent -n "$$(wc -c < $(OUTPUT_VIDEO))" $(OUTPUT_VIDEO) $(REFERENCE_VIDEO) && echo "test == reference :D" || echo "test != reference :("
+	@cmp --silent -n "$$(wc -c < $(C63_FILE))" $(C63_FILE) $(REFERENCE_C63) && echo "test == reference :D" || echo "test != reference :("
+		

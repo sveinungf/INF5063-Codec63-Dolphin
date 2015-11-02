@@ -2,9 +2,6 @@ CC = gcc
 
 DEBUG ?= 0
 
-VIDEO ?= 0
-FRAMES ?= 0
-
 NODE_ID_ENCODER ?= 28
 LOCAL_ADAPTER_NO ?= 0
 

@@ -1,8 +1,10 @@
 #ifndef SISCI_ERRCHK_H
 #define SISCI_ERRCHK_H
 
-#include "sisci_api.h"
-#include "sisci_error.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <sisci_api.h>
+#include <sisci_error.h>
 
 static inline void sisci_check_error(sci_error_t error, const char* file, int line, int terminate)
 {

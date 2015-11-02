@@ -58,7 +58,7 @@ all: c63enc
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 
-c63enc: c63enc.o dsp.o tables.o common.o me.o
+c63enc: c63enc.o dsp.o tables.o common.o me.o sisci.o
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:

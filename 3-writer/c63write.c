@@ -145,7 +145,7 @@ static sci_error_t init_SISCI_segments(struct c63_common *cm) {
 	sci_error_t error;
 
 	// Set local segment id
-	uint32_t localSegmentId = (localNodeId << 16) | encoderNodeId | 0;
+	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | SEGMENT_WRITER_ENCODED;
 
 	// Set segment size
 	uint32_t localSegmentSize = sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) + (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +

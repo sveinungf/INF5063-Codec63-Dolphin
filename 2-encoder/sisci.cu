@@ -147,7 +147,7 @@ yuv_t init_image_segment(struct c63_common* cm)
 
 void init_encoded_data_segment(struct c63_common* cm)
 {
-	unsigned int remoteSegmentId = (writerNodeId << 16) | (localNodeId) | 0;
+	unsigned int remoteSegmentId = (writerNodeId << 16) | (localNodeId << 8) | SEGMENT_WRITER_ENCODED;
 
 	sci_error_t error;
 

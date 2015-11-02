@@ -17,4 +17,8 @@ typedef enum {
 	SEGMENT_ENCODER_IMAGE
 } c63_segment_encoder;
 
+typedef enum {
+	SEGMENT_WRITER_ENCODED
+} c63_segment_writer;
+
 #endif /* SISCI_COMMON_H_ */

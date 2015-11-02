@@ -25,6 +25,10 @@
 #define VX 1
 #define VY 1
 
+// Motion estimation search range, pixels in every direction
+#define ME_RANGE_Y 16
+#define ME_RANGE_UV (ME_RANGE_Y/2)
+
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
  e.g., like 0xD8 in the SOI marker below. Some markers have a payload, and if
@@ -76,14 +80,36 @@ struct macroblock
 
 struct frame
 {
-  yuv_t *orig;        // Original input image
-  yuv_t *recons;      // Reconstructed image
-  yuv_t *predicted;   // Predicted frame from intra-prediction
+  yuv_t *orig_gpu;			// Original input image
+  yuv_t *recons_gpu;		// Reconstructed image
+  yuv_t *predicted_gpu;		// Predicted frame from intra-prediction
 
   dct_t *residuals;   // Difference between original image and predicted frame
+  dct_t *residuals_gpu;
 
   struct macroblock *mbs[COLOR_COMPONENTS];
+  struct macroblock *mbs_gpu[COLOR_COMPONENTS];
+  
   int keyframe;
+};
+
+struct boundaries
+{
+	const int* __restrict__ left;
+	const int* __restrict__ right;
+	const int* __restrict__ top;
+	const int* __restrict__ bottom;
+};
+
+struct cuda_data
+{
+	cudaStream_t streamY;
+	cudaStream_t streamU;
+	cudaStream_t streamV;
+
+	unsigned int* sad_index_resultsY;
+	unsigned int* sad_index_resultsU;
+	unsigned int* sad_index_resultsV;
 };
 
 struct c63_common
@@ -93,11 +119,12 @@ struct c63_common
 
   int padw[COLOR_COMPONENTS], padh[COLOR_COMPONENTS];
 
-  int mb_cols, mb_rows;
+  int mb_colsY, mb_rowsY;
+  int mb_colsUV, mb_rowsUV;
 
   uint8_t qp;                         // Quality parameter
 
-  int me_search_range;
+  //int me_search_range;	// This is now defined in c63.h
 
   uint8_t quanttbl[COLOR_COMPONENTS][64];
 
@@ -110,6 +137,11 @@ struct c63_common
   int frames_since_keyframe;
 
   struct entropy_ctx e_ctx;
+
+  struct boundaries me_boundariesY;
+  struct boundaries me_boundariesUV;
+
+  struct cuda_data cuda_data;
 };
 
 #endif  /* C63_C63_H_ */

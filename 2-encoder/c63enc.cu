@@ -7,16 +7,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <utility>
 #include "sisci_api.h"
 #include "sisci_error.h"
 
 #include "../common/sisci_common.h"
 #include "../common/sisci_errchk.h"
-
-extern "C" {
 #include "c63.h"
 #include "common.h"
 #include "me.h"
+
+extern "C" {
 #include "tables.h"
 }
 
@@ -62,12 +63,20 @@ static uint32_t residuals_offset_V;
 
 static yuv_t image;
 
-static void c63_encode_image(struct c63_common *cm, yuv_t *image)
+static void zero_out_prediction(struct c63_common* cm)
 {
-	/* Advance to next frame */
-	destroy_frame(cm->refframe);
-	cm->refframe = cm->curframe;
-	cm->curframe = create_frame(cm, image);
+	struct frame* frame = cm->curframe;
+	cudaMemsetAsync(frame->predicted_gpu->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t), cm->cuda_data.streamY);
+	cudaMemsetAsync(frame->predicted_gpu->U, 0, cm->upw * cm->uph * sizeof(uint8_t), cm->cuda_data.streamU);
+	cudaMemsetAsync(frame->predicted_gpu->V, 0, cm->vpw * cm->vph * sizeof(uint8_t), cm->cuda_data.streamV);
+}
+
+static void c63_encode_image(struct c63_common *cm, yuv_t* image_gpu)
+{
+	// Advance to next frame by swapping current and reference frame
+	std::swap(cm->curframe, cm->refframe);
+
+	cm->curframe->orig_gpu = image_gpu;
 
 	/* Check if keyframe */
 	if (cm->framenum == 0 || cm->frames_since_keyframe == cm->keyframe_interval)
@@ -77,10 +86,7 @@ static void c63_encode_image(struct c63_common *cm, yuv_t *image)
 
 		fprintf(stderr, " (keyframe) ");
 	}
-	else
-	{
-		cm->curframe->keyframe = 0;
-	}
+	else { cm->curframe->keyframe = 0; }
 
 	if (!cm->curframe->keyframe)
 	{
@@ -90,27 +96,195 @@ static void c63_encode_image(struct c63_common *cm, yuv_t *image)
 		/* Motion Compensation */
 		c63_motion_compensate(cm);
 	}
+	else
+	{
+		// dct_quantize() expects zeroed out prediction buffers for key frames.
+		// We zero them out here since we reuse the buffers from previous frames.
+		zero_out_prediction(cm);
+	}
+
+	yuv_t* predicted = cm->curframe->predicted_gpu;
+	dct_t* residuals = cm->curframe->residuals_gpu;
+
+	const dim3 threadsPerBlock(8, 8);
+
+	const dim3 numBlocks_Y(cm->padw[Y_COMPONENT]/threadsPerBlock.x, cm->padh[Y_COMPONENT]/threadsPerBlock.y);
+	const dim3 numBlocks_UV(cm->padw[U_COMPONENT]/threadsPerBlock.x, cm->padh[U_COMPONENT]/threadsPerBlock.y);
 
 	/* DCT and Quantization */
-	dct_quantize(image->Y, cm->curframe->predicted->Y, cm->padw[Y_COMPONENT], cm->padh[Y_COMPONENT],
-			cm->curframe->residuals->Ydct, cm->quanttbl[Y_COMPONENT]);
+	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, cm->cuda_data.streamY>>>(cm->curframe->orig_gpu->Y, predicted->Y,
+			cm->padw[Y_COMPONENT], residuals->Ydct, Y_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Ydct, residuals->Ydct, cm->padw[Y_COMPONENT]*cm->padh[Y_COMPONENT]*sizeof(int16_t),
+			cudaMemcpyDeviceToHost, cm->cuda_data.streamY);
 
-	dct_quantize(image->U, cm->curframe->predicted->U, cm->padw[U_COMPONENT], cm->padh[U_COMPONENT],
-			cm->curframe->residuals->Udct, cm->quanttbl[U_COMPONENT]);
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamU>>>(cm->curframe->orig_gpu->U, predicted->U,
+			cm->padw[U_COMPONENT], residuals->Udct, U_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Udct, residuals->Udct, cm->padw[U_COMPONENT]*cm->padh[U_COMPONENT]*sizeof(int16_t),
+			cudaMemcpyDeviceToHost, cm->cuda_data.streamU);
 
-	dct_quantize(image->V, cm->curframe->predicted->V, cm->padw[V_COMPONENT], cm->padh[V_COMPONENT],
-			cm->curframe->residuals->Vdct, cm->quanttbl[V_COMPONENT]);
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamV>>>(cm->curframe->orig_gpu->V, predicted->V,
+			cm->padw[V_COMPONENT], residuals->Vdct, V_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct, cm->padw[V_COMPONENT]*cm->padh[V_COMPONENT]*sizeof(int16_t),
+			cudaMemcpyDeviceToHost, cm->cuda_data.streamV);
 
 	/* Reconstruct frame for inter-prediction */
-	dequantize_idct(cm->curframe->residuals->Ydct, cm->curframe->predicted->Y, cm->ypw, cm->yph,
-			cm->curframe->recons->Y, cm->quanttbl[Y_COMPONENT]);
-	dequantize_idct(cm->curframe->residuals->Udct, cm->curframe->predicted->U, cm->upw, cm->uph,
-			cm->curframe->recons->U, cm->quanttbl[U_COMPONENT]);
-	dequantize_idct(cm->curframe->residuals->Vdct, cm->curframe->predicted->V, cm->vpw, cm->vph,
-			cm->curframe->recons->V, cm->quanttbl[V_COMPONENT]);
+	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, cm->cuda_data.streamY>>>(residuals->Ydct, predicted->Y,
+			cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
+
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamU>>>(residuals->Udct, predicted->U,
+			cm->upw, cm->curframe->recons_gpu->U, U_COMPONENT);
+
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamV>>>(residuals->Vdct, predicted->V,
+			cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the
-	 prediction is correct */
+     prediction is correct */
+}
+
+static void init_boundaries(c63_common* cm)
+{
+	int hY = cm->padh[Y_COMPONENT];
+	int hUV = cm->padh[U_COMPONENT];
+
+	int wY = cm->padw[Y_COMPONENT];
+	int wUV = cm->padw[U_COMPONENT];
+
+	int* leftsY = new int[cm->mb_colsY];
+	int* leftsUV = new int[cm->mb_colsUV];
+	int* rightsY = new int[cm->mb_colsY];
+	int* rightsUV = new int[cm->mb_colsUV];
+	int* topsY = new int[cm->mb_rowsY];
+	int* topsUV = new int[cm->mb_rowsUV];
+	int* bottomsY = new int[cm->mb_rowsY];
+	int* bottomsUV = new int[cm->mb_rowsUV];
+
+	for (int mb_x = 0; mb_x < cm->mb_colsY; ++mb_x) {
+		leftsY[mb_x] = mb_x * 8 - ME_RANGE_Y;
+		rightsY[mb_x] = mb_x * 8 + ME_RANGE_Y;
+
+		if (leftsY[mb_x] < 0) {
+			leftsY[mb_x] = 0;
+		}
+
+		if (rightsY[mb_x] > (wY - 8)) {
+			rightsY[mb_x] = wY - 8;
+		}
+	}
+
+	for (int mb_x = 0; mb_x < cm->mb_colsUV; ++mb_x) {
+		leftsUV[mb_x] = mb_x * 8 - ME_RANGE_UV;
+		rightsUV[mb_x] = mb_x * 8 + ME_RANGE_UV;
+
+		if (leftsUV[mb_x] < 0) {
+			leftsUV[mb_x] = 0;
+		}
+
+		if (rightsUV[mb_x] > (wUV - 8)) {
+			rightsUV[mb_x] = wUV - 8;
+		}
+	}
+
+	for (int mb_y = 0; mb_y < cm->mb_rowsY; ++mb_y) {
+		topsY[mb_y] = mb_y * 8 - ME_RANGE_Y;
+		bottomsY[mb_y] = mb_y * 8 + ME_RANGE_Y;
+
+		if (topsY[mb_y] < 0) {
+			topsY[mb_y] = 0;
+		}
+
+		if (bottomsY[mb_y] > (hY - 8)) {
+			bottomsY[mb_y] = hY - 8;
+		}
+	}
+
+	for (int mb_y = 0; mb_y < cm->mb_rowsUV; ++mb_y) {
+		topsUV[mb_y] = mb_y * 8 - ME_RANGE_UV;
+		bottomsUV[mb_y] = mb_y * 8 + ME_RANGE_UV;
+
+		if (topsUV[mb_y] < 0) {
+			topsUV[mb_y] = 0;
+		}
+
+		if (bottomsUV[mb_y] > (hUV - 8)) {
+			bottomsUV[mb_y] = hUV - 8;
+		}
+	}
+
+	struct boundaries* boundY = &cm->me_boundariesY;
+	cudaMalloc((void**) &boundY->left, cm->mb_colsY * sizeof(int));
+	cudaMalloc((void**) &boundY->right, cm->mb_colsY * sizeof(int));
+	cudaMalloc((void**) &boundY->top, cm->mb_rowsY * sizeof(int));
+	cudaMalloc((void**) &boundY->bottom, cm->mb_rowsY * sizeof(int));
+
+	struct boundaries* boundUV = &cm->me_boundariesUV;
+	cudaMalloc((void**) &boundUV->left, cm->mb_colsUV * sizeof(int));
+	cudaMalloc((void**) &boundUV->right, cm->mb_colsUV * sizeof(int));
+	cudaMalloc((void**) &boundUV->top, cm->mb_rowsUV * sizeof(int));
+	cudaMalloc((void**) &boundUV->bottom, cm->mb_rowsUV * sizeof(int));
+
+	const cudaStream_t& streamY = cm->cuda_data.streamY;
+	cudaMemcpyAsync((void*) boundY->left, leftsY, cm->mb_colsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
+	cudaMemcpyAsync((void*) boundY->right, rightsY, cm->mb_colsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
+	cudaMemcpyAsync((void*) boundY->top, topsY, cm->mb_rowsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
+	cudaMemcpyAsync((void*) boundY->bottom, bottomsY, cm->mb_rowsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
+
+	cudaMemcpy((void*) boundUV->left, leftsUV, cm->mb_colsUV * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*) boundUV->right, rightsUV, cm->mb_colsUV * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*) boundUV->top, topsUV, cm->mb_rowsUV * sizeof(int), cudaMemcpyHostToDevice);
+	cudaMemcpy((void*) boundUV->bottom, bottomsUV, cm->mb_rowsUV * sizeof(int), cudaMemcpyHostToDevice);
+
+	delete[] leftsY;
+	delete[] leftsUV;
+	delete[] rightsY;
+	delete[] rightsUV;
+	delete[] topsY;
+	delete[] topsUV;
+	delete[] bottomsY;
+	delete[] bottomsUV;
+}
+
+static void deinit_boundaries(c63_common* cm)
+{
+	cudaFree((void*) cm->me_boundariesY.left);
+	cudaFree((void*) cm->me_boundariesY.right);
+	cudaFree((void*) cm->me_boundariesY.top);
+	cudaFree((void*) cm->me_boundariesY.bottom);
+
+	cudaFree((void*) cm->me_boundariesUV.left);
+	cudaFree((void*) cm->me_boundariesUV.right);
+	cudaFree((void*) cm->me_boundariesUV.top);
+	cudaFree((void*) cm->me_boundariesUV.bottom);
+}
+
+static void init_cuda_data(c63_common* cm)
+{
+	cuda_data* cuda_me = &(cm->cuda_data);
+
+	cudaStreamCreate(&cuda_me->streamY);
+	cudaStreamCreate(&cuda_me->streamU);
+	cudaStreamCreate(&cuda_me->streamV);
+
+	cudaMalloc((void**) &cuda_me->sad_index_resultsY, cm->mb_colsY*cm->mb_rowsY*sizeof(unsigned int));
+	cudaMalloc((void**) &cuda_me->sad_index_resultsU, cm->mb_colsUV*cm->mb_rowsUV*sizeof(unsigned int));
+	cudaMalloc((void**) &cuda_me->sad_index_resultsV, cm->mb_colsUV*cm->mb_rowsUV*sizeof(unsigned int));
+}
+
+static void deinit_cuda_data(c63_common* cm)
+{
+	cudaStreamDestroy(cm->cuda_data.streamY);
+	cudaStreamDestroy(cm->cuda_data.streamU);
+	cudaStreamDestroy(cm->cuda_data.streamV);
+
+	cudaFree(cm->cuda_data.sad_index_resultsY);
+	cudaFree(cm->cuda_data.sad_index_resultsU);
+	cudaFree(cm->cuda_data.sad_index_resultsV);
+}
+
+static void copy_image_to_gpu(struct c63_common* cm, yuv_t* image, yuv_t* image_gpu)
+{
+	cudaMemcpyAsync(image_gpu->Y, image->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamY);
+	cudaMemcpyAsync(image_gpu->U, image->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamU);
+	cudaMemcpyAsync(image_gpu->V, image->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamV);
 }
 
 struct c63_common* init_c63_enc(int width, int height)
@@ -128,14 +302,16 @@ struct c63_common* init_c63_enc(int width, int height)
 	cm->padw[V_COMPONENT] = cm->vpw = (uint32_t) (ceil(width * VX / (YX * 8.0f)) * 8);
 	cm->padh[V_COMPONENT] = cm->vph = (uint32_t) (ceil(height * VY / (YY * 8.0f)) * 8);
 
-	cm->mb_cols = cm->ypw / 8;
-	cm->mb_rows = cm->yph / 8;
+	cm->mb_colsY = cm->ypw / 8;
+	cm->mb_rowsY = cm->yph / 8;
+	cm->mb_colsUV = cm->mb_colsY / 2;
+	cm->mb_rowsUV = cm->mb_rowsY / 2;
 
 	/* Quality parameters -- Home exam deliveries should have original values,
 	 i.e., quantization factor should be 25, search range should be 16, and the
 	 keyframe interval should be 100. */
 	cm->qp = 25;                  // Constant quantization factor. Range: [1..50]
-	cm->me_search_range = 16;     // Pixels in every direction
+	//cm->me_search_range = 16;   // This is now defined in c63.h
 	cm->keyframe_interval = 100;  // Distance between keyframes
 
 	/* Initialize quantization tables */
@@ -146,12 +322,25 @@ struct c63_common* init_c63_enc(int width, int height)
 		cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
 	}
 
+	init_cuda_data(cm);
+
+	cm->curframe = create_frame(cm);
+	cm->refframe = create_frame(cm);
+
+	init_boundaries(cm);
+
 	return cm;
 }
 
 void free_c63_enc(struct c63_common* cm)
 {
+	deinit_boundaries(cm);
+
 	destroy_frame(cm->curframe);
+	destroy_frame(cm->refframe);
+
+	deinit_cuda_data(cm);
+
 	free(cm);
 }
 
@@ -264,7 +453,6 @@ static void init_SISCI_segments(struct c63_common* cm)
 	SCISetSegmentAvailable(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-
 	// Connect to remote segment on writer
 	unsigned int remoteSegmentId = (writerNodeId << 16) | (localNodeId) | 0;
 
@@ -286,11 +474,11 @@ static void init_SISCI_segments(struct c63_common* cm)
 	// Set offsets within segment
 	keyframe_offset = 0;
 	mb_offset_Y = keyframe_offset + sizeof(int);
-	residuals_offset_Y = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
+	residuals_offset_Y = mb_offset_Y + cm->mb_rowsY*cm->mb_colsY*sizeof(struct macroblock);
 	mb_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
-	residuals_offset_U = mb_offset_U + (cm->mb_rows/2)*(cm->mb_cols/2)*sizeof(struct macroblock);
+	residuals_offset_U = mb_offset_U + cm->mb_rowsUV*cm->mb_colsUV*sizeof(struct macroblock);
 	mb_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
-	residuals_offset_V = mb_offset_V +  (cm->mb_rows/2)*(cm->mb_cols/2)*sizeof(struct macroblock);
+	residuals_offset_V = mb_offset_V + cm->mb_rowsUV*cm->mb_colsUV*sizeof(struct macroblock);
 }
 
 static void cleanup_SISCI()
@@ -333,8 +521,6 @@ static void cleanup_SISCI()
 
 int main(int argc, char **argv)
 {
-	printf("her");
-
 	int c;
 
 	if (argc == 1)
@@ -383,6 +569,8 @@ int main(int argc, char **argv)
 	uint8_t done;
 	unsigned int done_size = sizeof(uint8_t);
 
+	yuv_t* image_gpu = create_image_gpu(cm);
+
 	while (1)
 	{
 		printf("Waiting for interrupt...\n");
@@ -398,8 +586,14 @@ int main(int argc, char **argv)
 			break;
 		}
 
+		cudaStreamSynchronize(cm->cuda_data.streamY);
+		cudaStreamSynchronize(cm->cuda_data.streamU);
+		cudaStreamSynchronize(cm->cuda_data.streamV);
+
+		copy_image_to_gpu(cm, &image, image_gpu);
+
 		printf("Encoding frame %d, ", numframes);
-		c63_encode_image(cm, &image);
+		c63_encode_image(cm, image_gpu);
 
 		if (numframes != 0) {
 			// Wait for interrupt from writer
@@ -408,25 +602,33 @@ int main(int argc, char **argv)
 			} while (error != SCI_ERR_OK);
 		}
 
+		cudaStreamSynchronize(cm->cuda_data.streamY);
+		cudaStreamSynchronize(cm->cuda_data.streamU);
+		cudaStreamSynchronize(cm->cuda_data.streamV);
+
 		// Copy data frame to remote segment
 		printf("Sending frame %d to writer\n", numframes);
 
-		SCIMemCpy(writer_sequence, (void*) &cm->curframe->keyframe, remoteMap, keyframe_offset, sizeof(int), SCI_FLAG_ERROR_CHECK, &error);
+		// TODO: These currently fail when using SCI_FLAG_ERROR_CHECK
+		SCIMemCpy(writer_sequence, (void*) &cm->curframe->keyframe, remoteMap, keyframe_offset, sizeof(int), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
-		SCIMemCpy(writer_sequence, cm->curframe->mbs[Y_COMPONENT], remoteMap, mb_offset_Y, cm->mb_rows*cm->mb_cols*sizeof(struct macroblock), SCI_FLAG_ERROR_CHECK, &error);
-		sisci_assert(error);
-		SCIMemCpy(writer_sequence, cm->curframe->residuals->Ydct, remoteMap, residuals_offset_Y, cm->ypw*cm->yph*sizeof(int16_t), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(writer_sequence, cm->curframe->mbs[Y_COMPONENT], remoteMap, mb_offset_Y, cm->mb_rowsY*cm->mb_colsY*sizeof(struct macroblock), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
-		SCIMemCpy(writer_sequence, cm->curframe->mbs[U_COMPONENT], remoteMap, mb_offset_U, (cm->mb_rows/2)*(cm->mb_cols/2)*sizeof(struct macroblock), SCI_FLAG_ERROR_CHECK, &error);
-		sisci_assert(error);
-		SCIMemCpy(writer_sequence, cm->curframe->residuals->Udct, remoteMap, residuals_offset_U, cm->upw*cm->uph*sizeof(int16_t), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(writer_sequence, cm->curframe->residuals->Ydct, remoteMap, residuals_offset_Y, cm->ypw*cm->yph*sizeof(int16_t), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
-		SCIMemCpy(writer_sequence, cm->curframe->mbs[V_COMPONENT], remoteMap, mb_offset_V, (cm->mb_rows/2)*(cm->mb_cols/2)*sizeof(struct macroblock), SCI_FLAG_ERROR_CHECK, &error);
+		SCIMemCpy(writer_sequence, cm->curframe->mbs[U_COMPONENT], remoteMap, mb_offset_U, (cm->mb_rowsUV)*(cm->mb_colsUV)*sizeof(struct macroblock), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
-		SCIMemCpy(writer_sequence, cm->curframe->residuals->Vdct, remoteMap, residuals_offset_V, cm->vpw*cm->vph*sizeof(int16_t), SCI_FLAG_ERROR_CHECK, &error);
+
+		SCIMemCpy(writer_sequence, cm->curframe->residuals->Udct, remoteMap, residuals_offset_U, cm->upw*cm->uph*sizeof(int16_t), SCI_NO_FLAGS, &error);
+		sisci_assert(error);
+
+		SCIMemCpy(writer_sequence, cm->curframe->mbs[V_COMPONENT], remoteMap, mb_offset_V, (cm->mb_rowsUV)*(cm->mb_colsUV)*sizeof(struct macroblock), SCI_NO_FLAGS, &error);
+		sisci_assert(error);
+
+		SCIMemCpy(writer_sequence, cm->curframe->residuals->Vdct, remoteMap, residuals_offset_V, cm->vpw*cm->vph*sizeof(int16_t), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		printf("Done!\n");
@@ -446,6 +648,8 @@ int main(int argc, char **argv)
 		SCITriggerInterrupt(interruptToReader, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
+
+	destroy_image_gpu(image_gpu);
 
 	free_c63_enc(cm);
 

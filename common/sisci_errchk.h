@@ -8,7 +8,7 @@ static inline void sisci_check_error(sci_error_t error, const char* file, int li
 {
 	if (error != SCI_ERR_OK)
 	{
-		fprintf(stderr, "SISCI error code 0x%x at %s, line %d", error, file, line);
+		fprintf(stderr, "SISCI error code 0x%x at %s, line %d\n", error, file, line);
 
 		if (terminate)
 		{

@@ -83,8 +83,6 @@ static void c63_encode_image(struct c63_common *cm, yuv_t* image_gpu)
 	{
 		cm->curframe->keyframe = 1;
 		cm->frames_since_keyframe = 0;
-
-		fprintf(stderr, " (keyframe) ");
 	}
 	else { cm->curframe->keyframe = 0; }
 
@@ -377,6 +375,7 @@ static void init_SISCI()
 
 	// Interrupts to the reader
 	printf("Connecting to interrupt on reader... ");
+	fflush(stdout);
 	do
 	{
 		SCIConnectInterrupt(sd, &interruptToReader, readerNodeId, localAdapterNo,
@@ -394,6 +393,7 @@ static void init_SISCI()
 
 	// Interrupts to the writer
 	printf("Connecting to interrupt on writer... ");
+	fflush(stdout);
 	do
 	{
 		SCIConnectDataInterrupt(sd, &interruptToWriter, writerNodeId, localAdapterNo,
@@ -405,7 +405,9 @@ static void init_SISCI()
 
 static void receive_width_and_height(int& width, int& height)
 {
-	printf("Waiting for widths and heights from reader... ");
+	printf("Waiting for width and height from reader... ");
+	fflush(stdout);
+
 	uint32_t widthAndHeight[2];
 	unsigned int length = 2 * sizeof(uint32_t);
 	SCIWaitForDataInterrupt(interruptFromReader, &widthAndHeight, &length, SCI_INFINITE_TIMEOUT,
@@ -573,42 +575,48 @@ int main(int argc, char **argv)
 
 	while (1)
 	{
-		printf("Waiting for interrupt...\n");
+		printf("Frame %d:", numframes);
+		fflush(stdout);
+
+		// The reader sends an interrupt when it has transferred the next frame
 		SCIWaitForDataInterrupt(interruptFromReader, &done, &done_size, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
-		if (done)
+		if (!done)
 		{
-			printf("DONE from reader\n");
-			// Send interrupt to writer signalling that encoding has been finished
+			printf(" Received");
+			fflush(stdout);
+		}
+		else
+		{
+			printf("\rNo more frames from reader\n");
+
+			// Send interrupt to writer signaling that encoding has been finished
 			SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 			sisci_assert(error);
 			break;
 		}
 
+		copy_image_to_gpu(cm, &image, image_gpu);
+
+		c63_encode_image(cm, image_gpu);
+
+		// Wait until the GPU has finished encoding
 		cudaStreamSynchronize(cm->cuda_data.streamY);
 		cudaStreamSynchronize(cm->cuda_data.streamU);
 		cudaStreamSynchronize(cm->cuda_data.streamV);
 
-		copy_image_to_gpu(cm, &image, image_gpu);
-
-		printf("Encoding frame %d, ", numframes);
-		c63_encode_image(cm, image_gpu);
+		printf(", encoded");
+		fflush(stdout);
 
 		if (numframes != 0) {
-			// Wait for interrupt from writer
+			// The writer sends an interrupt when it is ready for the next frame
 			do {
 				SCIWaitForInterrupt(interruptFromWriter, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 			} while (error != SCI_ERR_OK);
 		}
 
-		cudaStreamSynchronize(cm->cuda_data.streamY);
-		cudaStreamSynchronize(cm->cuda_data.streamU);
-		cudaStreamSynchronize(cm->cuda_data.streamV);
-
 		// Copy data frame to remote segment
-		printf("Sending frame %d to writer\n", numframes);
-
 		// TODO: These currently fail when using SCI_FLAG_ERROR_CHECK
 		SCIMemCpy(writer_sequence, (void*) &cm->curframe->keyframe, remoteMap, keyframe_offset, sizeof(int), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
@@ -631,16 +639,14 @@ int main(int argc, char **argv)
 		SCIMemCpy(writer_sequence, cm->curframe->residuals->Vdct, remoteMap, residuals_offset_V, cm->vpw*cm->vph*sizeof(int16_t), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
-		printf("Done!\n");
+		printf(", sent\n");
 
-		// Send interrupt to writer signalling the data has been transfered
+		// Send interrupt to writer signaling the data has been transfered
 		SCITriggerDataInterrupt(interruptToWriter, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;
-
-		printf("Done!\n");
 
 		++numframes;
 

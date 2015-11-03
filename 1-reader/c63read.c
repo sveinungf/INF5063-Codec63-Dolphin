@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "../common/sisci_common.h"
+#include "../common/sisci_errchk.h"
 #include "c63.h"
 
 #include "sisci_api.h"
@@ -98,34 +99,24 @@ static void init_c63_enc() {
 	segmentSize_V = vpw*vph*sizeof(uint8_t);
 }
 
-static sci_error_t init_SISCI() {
+static void init_SISCI() {
 
 	// Initialization of SISCI API
 	sci_error_t error;
 	SCIInitialize(SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
+	sisci_assert(error);
 
 	SCIOpen(&sd, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
+	sisci_assert(error);
 
 	unsigned int maxEntries = 1;
 	SCICreateDMAQueue(sd, &dmaQueue, localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr, "SCICreateDMAQueue failed - Error code 0x%x\n", error);
-		return error;
-	}
+	sisci_assert(error);
 
 	// Create local interrupt descriptor(s) for communication between reader machine and processing machine
     interruptFromEncoderNo = READY_FOR_ORIG_TRANSFER;
 	SCICreateInterrupt(sd, &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, NULL, NULL, SCI_FLAG_FIXED_INTNO, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
+	sisci_assert(error);
 
 	// Connect reader node to remote interrupt at processing machine
 	printf("Connecting to interrupt on encoder...\n");
@@ -138,42 +129,26 @@ static sci_error_t init_SISCI() {
 	// Send interrupt to computation node with the size of the components
 	uint32_t sizes[2] = {width, height};
 	SCITriggerDataInterrupt(interruptToEncoder, (void*) &sizes, 2*sizeof(uint32_t), SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
-		exit(EXIT_FAILURE);
-	}
-
-	return SCI_ERR_OK;
+	sisci_assert(error);
 }
 
-sci_error_t init_SISCI_segments() {
+void init_SISCI_segments() {
 	sci_error_t error;
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
-	if(error != SCI_ERR_OK) {
-		return error;
-	}
+	sisci_assert(error);
 
 	totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
 	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 0;
 
 	SCICreateSegment(sd, &localSegment, localSegmentId, totalSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-    if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateSegment failed - Error code 0x%x\n", error);
-		return error;
-	}
+	sisci_assert(error);
 
     SCIPrepareSegment(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
-    if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCIPrepareSegment failed - Error code 0x%x\n", error);
-		return error;
-	}
+    sisci_assert(error);
 
 	void* buffer = SCIMapLocalSegment(localSegment, &localMap, 0, totalSize, NULL, SCI_NO_FLAGS, &error);
-    if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCIMapLocalSegment failed - Error code 0x%x\n", error);
-		return error;
-	}
+	sisci_assert(error);
 
     unsigned int offset = 0;
     local_Y = (uint8_t*) buffer + offset;
@@ -183,35 +158,39 @@ sci_error_t init_SISCI_segments() {
     local_V = (uint8_t*) buffer + offset;
     offset += segmentSize_V;
 
+    // Connect to remote segment on encoder
 	remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8) | SEGMENT_ENCODER_IMAGE;
-
 	do {
 		SCIConnectSegment(sd, &remoteSegment, encoderNodeId, remoteSegmentId, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
-
-	return SCI_ERR_OK;
 }
 
-static sci_error_t cleanup_SISCI() {
+static void cleanup_SISCI() {
 	sci_error_t error;
 
 	SCIDisconnectSegment(remoteSegment, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
 	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIDisconnectDataInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIRemoveInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIRemoveDMAQueue(dmaQueue, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIClose(sd, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCITerminate();
-
-	return SCI_ERR_OK;
 }
 
 static void print_help() {
@@ -263,19 +242,13 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
+	sci_error_t error;
+
 	init_c63_enc();
 
-	sci_error_t error = init_SISCI();
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr, "Error initialising SISCI API - error code: %x\n", error);
-		exit(EXIT_FAILURE);
-	}
+	init_SISCI();
 
-	error = init_SISCI_segments();
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr, "Error initialising segments - error code: %x\n", error);
-		exit(EXIT_FAILURE);
-	}
+	init_SISCI_segments();
 
 	input_file = argv[optind];
 
@@ -314,25 +287,16 @@ int main(int argc, char **argv) {
 		printf("Sending frame %d to computation node\n", numframes);
 
 		SCIStartDmaTransfer(dmaQueue, localSegment, remoteSegment, 0, totalSize, 0, NULL, NULL, SCI_NO_FLAGS, &error);
-		if(error != SCI_ERR_OK) {
-			fprintf(stderr,"SCIStartDmaTransfer failed - Error code 0x%x\n", error);
-			exit(EXIT_FAILURE);
-		}
+		sisci_assert(error);
 
 		SCIWaitForDMAQueue(dmaQueue, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	    if (error != SCI_ERR_OK) {
-	        fprintf(stderr,"SCIWaitForDMAQueue failed - Error code 0x%x\n",error);
-	        return error;
-	    }
+		sisci_assert(error);
 
 		printf("Done!\n");
 
 		// Send interrupt to computation node signalling that the frame has been copied
 		SCITriggerDataInterrupt(interruptToEncoder, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
-		if (error != SCI_ERR_OK) {
-			fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
-			exit(EXIT_FAILURE);
-		}
+		sisci_assert(error);
 
 		++numframes;
 
@@ -345,14 +309,11 @@ int main(int argc, char **argv) {
 
 	// Signal computation node that there are no more frames to be encoded
 	SCITriggerDataInterrupt(interruptToEncoder, (void*) &done, sizeof(uint8_t), SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	fclose(infile);
 
-	error = cleanup_SISCI();
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr, "Error during SISCI cleanup - error code: %x\n", error);
-		exit(EXIT_FAILURE);
-	}
+	cleanup_SISCI();
 
 	return EXIT_SUCCESS;
 }

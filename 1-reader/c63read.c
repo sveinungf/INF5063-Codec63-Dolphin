@@ -46,6 +46,7 @@ static int limit_numframes = 0;
 
 static uint32_t width;
 static uint32_t height;
+static uint32_t totalSize;
 
 
 /* getopt */
@@ -153,7 +154,7 @@ sci_error_t init_SISCI_segments() {
 		return error;
 	}
 
-	unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
+	totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
 	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 0;
 
 	SCICreateSegment(sd, &localSegment, localSegmentId, totalSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
@@ -312,7 +313,6 @@ int main(int argc, char **argv) {
 		// Copy new frame to remote segment
 		printf("Sending frame %d to computation node\n", numframes);
 
-		unsigned int totalSize = segmentSize_Y + segmentSize_U + segmentSize_V;
 		SCIStartDmaTransfer(dmaQueue, localSegment, remoteSegment, 0, totalSize, 0, NULL, NULL, SCI_NO_FLAGS, &error);
 		if(error != SCI_ERR_OK) {
 			fprintf(stderr,"SCIStartDmaTransfer failed - Error code 0x%x\n", error);

@@ -203,8 +203,8 @@ static sci_error_t init_SISCI_segments(struct c63_common *cm) {
 
 static sci_error_t cleanup_SISCI() {
 	sci_error_t error;
-	SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
 	SCIDisconnectInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
+	SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
 
 	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
 

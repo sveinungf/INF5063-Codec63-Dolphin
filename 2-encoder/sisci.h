@@ -12,7 +12,8 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 void cleanup_SISCI();
 
 yuv_t init_image_segment(struct c63_common* cm);
-void init_encoded_data_segment(struct c63_common* cm);
+void init_remote_encoded_data_segment(struct c63_common* cm);
+void init_local_encoded_data_segment();
 void cleanup_segments();
 
 void receive_width_and_height(uint32_t* width, uint32_t* height);

@@ -46,7 +46,7 @@ all: c63read
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-c63read: c63read.o
+c63read: c63read.o sisci.o
 	$(CC) $^ $(LDFLAGS) -o $@
 
 clean:

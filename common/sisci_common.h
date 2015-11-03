@@ -1,8 +1,16 @@
 #ifndef SISCI_COMMON_H_
 #define SISCI_COMMON_H_
 
+#include <inttypes.h>
+
 #define SCI_NO_FLAGS        0
 #define SCI_NO_CALLBACK     NULL
+
+// Signals
+typedef enum {
+	IMAGE_TRANSFERRED,
+	NO_MORE_FRAMES
+} encoder_signal;
 
 // Interrupts
 typedef enum {
@@ -20,5 +28,12 @@ typedef enum {
 typedef enum {
 	SEGMENT_WRITER_ENCODED
 } c63_segment_writer;
+
+struct segment_yuv
+{
+	volatile uint8_t* Y;
+	volatile uint8_t* U;
+	volatile uint8_t* V;
+};
 
 #endif /* SISCI_COMMON_H_ */

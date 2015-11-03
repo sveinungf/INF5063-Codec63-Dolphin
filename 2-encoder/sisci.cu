@@ -9,6 +9,7 @@
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static sci_desc_t sd;
+static sci_desc_t vd;
 
 // Reader
 static unsigned int readerNodeId;
@@ -21,17 +22,39 @@ static sci_map_t imageMap;
 static unsigned int writerNodeId;
 static sci_local_interrupt_t interruptFromWriter;
 static sci_remote_data_interrupt_t interruptToWriter;
-static sci_remote_segment_t encodedDataSegment;
-static sci_map_t encodedDataMap;
+static sci_remote_segment_t encodedDataSegmentWriter;
+static sci_map_t encodedDataMapWriter;
 static sci_sequence_t writerSequence;
+static uint32_t segmentSizeWriter;
 
-static unsigned int keyframeSize;
-static unsigned int mbSizeY;
-static unsigned int mbSizeU;
-static unsigned int mbSizeV;
-static unsigned int residualsSizeY;
-static unsigned int residualsSizeU;
-static unsigned int residualsSizeV;
+static sci_local_segment_t encodedDataSegmentLocal;
+static sci_map_t encodedDataMapLocal;
+static sci_dma_queue_t dmaQueue;
+
+uint32_t totalSize;
+unsigned int keyframeSize;
+unsigned int mbSizeY;
+unsigned int mbSizeU;
+unsigned int mbSizeV;
+unsigned int residualsSizeY;
+unsigned int residualsSizeU;
+unsigned int residualsSizeV;
+
+uint32_t keyframe_offset;
+uint32_t mbY_offset;
+uint32_t residualsY_offset;
+uint32_t mbU_offset;
+uint32_t residualsU_offset;
+uint32_t mbV_offset;
+uint32_t residualsV_offset;
+
+int *keyframe;
+struct macroblock *mb_Y;
+struct macroblock *mb_U;
+struct macroblock *mb_V;
+dct_t *residuals_Y;
+dct_t *residuals_U;
+dct_t *residuals_V;
 
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode)
@@ -48,7 +71,14 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	SCIOpen(&sd, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
+	SCIOpen(&vd, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	unsigned int maxEntries = 1;
+	SCICreateDMAQueue(vd, &dmaQueue, localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Interrupts from the reader
@@ -59,7 +89,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 
 	// Interrupts from the writer
 	unsigned int interruptFromWriterNo = DATA_WRITTEN;
-	SCICreateInterrupt(sd, &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
+	SCICreateInterrupt(vd, &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
 			NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
@@ -79,7 +109,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	fflush(stdout);
 	do
 	{
-		SCIConnectDataInterrupt(sd, &interruptToWriter, writerNodeId, localAdapterNo,
+		SCIConnectDataInterrupt(vd, &interruptToWriter, writerNodeId, localAdapterNo,
 				ENCODED_FRAME_TRANSFERRED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
@@ -104,7 +134,11 @@ void cleanup_SISCI()
 		SCIRemoveDataInterrupt(interruptFromReader, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
+	SCIRemoveDMAQueue(dmaQueue, SCI_NO_FLAGS, &error);
+
 	SCIClose(sd, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+	SCIClose(vd, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();
@@ -145,7 +179,7 @@ yuv_t init_image_segment(struct c63_common* cm)
 	return image;
 }
 
-void init_encoded_data_segment(struct c63_common* cm)
+void init_remote_encoded_data_segment(struct c63_common* cm)
 {
 	unsigned int remoteSegmentId = (writerNodeId << 16) | (localNodeId << 8) | SEGMENT_WRITER_ENCODED;
 
@@ -153,18 +187,18 @@ void init_encoded_data_segment(struct c63_common* cm)
 
 	// Connect to remote segment on writer
 	do {
-		SCIConnectSegment(sd, &encodedDataSegment, writerNodeId, remoteSegmentId, localAdapterNo,
+		SCIConnectSegment(vd, &encodedDataSegmentWriter, writerNodeId, remoteSegmentId, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
 	// Get segment size
-	uint32_t segmentSize = SCIGetRemoteSegmentSize(encodedDataSegment);
+	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentWriter);
 
 	unsigned int offset = 0;
-	SCIMapRemoteSegment(encodedDataSegment, &encodedDataMap, offset, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	SCIMapRemoteSegment(encodedDataSegmentWriter, &encodedDataMapWriter, offset, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-    SCICreateMapSequence(encodedDataMap, &writerSequence, 0, &error);
+    SCICreateMapSequence(encodedDataMapWriter, &writerSequence, 0, &error);
     sisci_assert(error);
 
     keyframeSize = sizeof(int);
@@ -174,6 +208,42 @@ void init_encoded_data_segment(struct c63_common* cm)
     residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
     residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
     residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
+
+    keyframe_offset = 0;
+    mbY_offset = keyframe_offset + keyframeSize;
+    residualsY_offset = mbY_offset + mbSizeY;
+    mbU_offset = residualsY_offset + residualsSizeY;
+    residualsU_offset = mbU_offset + mbSizeU;
+    mbV_offset = residualsU_offset + residualsSizeU;
+    residualsV_offset = mbV_offset + mbSizeV;
+
+
+}
+
+void init_local_encoded_data_segment() {
+	uint32_t localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | 37;
+
+	sci_error_t error;
+
+	SCICreateSegment(vd, &encodedDataSegmentLocal, localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIPrepareSegment(encodedDataSegmentLocal, localAdapterNo, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	void* buffer = SCIMapLocalSegment(encodedDataSegmentLocal, &encodedDataMapLocal, 0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	keyframe = (int*) ((uint8_t*) buffer + keyframe_offset);
+
+	mb_Y = (struct macroblock*) ((uint8_t*) buffer + mbY_offset);
+	residuals_Y = (dct_t*) ((uint8_t*) buffer + residualsY_offset);
+
+	mb_U = (struct macroblock*) ((uint8_t*) buffer + mbU_offset);
+	residuals_U = (dct_t*) ((uint8_t*) buffer + residualsU_offset);
+
+	mb_V = (struct macroblock*) ((uint8_t*) buffer + mbV_offset);
+	residuals_V = (dct_t*) ((uint8_t*) buffer + residualsV_offset);
 }
 
 static void cleanup_local_segment(sci_local_segment_t* segment, sci_map_t* map)
@@ -207,7 +277,8 @@ static void cleanup_remote_segment(sci_remote_segment_t* segment, sci_map_t* map
 void cleanup_segments()
 {
 	cleanup_local_segment(&imageSegment, &imageMap);
-	cleanup_remote_segment(&encodedDataSegment, &encodedDataMap, &writerSequence);
+	cleanup_local_segment(&encodedDataSegmentLocal, &encodedDataMapLocal);
+	cleanup_remote_segment(&encodedDataSegmentWriter, &encodedDataMapWriter, &writerSequence);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)
@@ -258,39 +329,23 @@ void wait_for_writer()
 	} while (error != SCI_ERR_OK);
 }
 
-void transfer_encoded_data(int keyframe, struct macroblock** mbs, dct_t* residuals)
+void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* residuals)
 {
 	sci_error_t error;
-	unsigned int offset = 0;
 
-	// TODO: These currently fail when using SCI_FLAG_ERROR_CHECK
-	SCIMemCpy(writerSequence, (void*) &keyframe, encodedDataMap, offset, keyframeSize, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-	offset += keyframeSize;
+	*keyframe = keyframe_val;
+	memcpy(mb_Y, mbs[Y_COMPONENT], mbSizeY);
+	memcpy(residuals_Y, residuals->Ydct, residualsSizeY);
+	memcpy(mb_U, mbs[U_COMPONENT], mbSizeU);
+	memcpy(residuals_U, residuals->Udct, residualsSizeU);
+	memcpy(mb_V, mbs[V_COMPONENT], mbSizeV);
+	memcpy(residuals_V, residuals->Vdct, residualsSizeV);
 
-	SCIMemCpy(writerSequence, mbs[Y_COMPONENT], encodedDataMap, offset, mbSizeY, SCI_NO_FLAGS, &error);
+	SCIStartDmaTransfer(dmaQueue, encodedDataSegmentLocal, encodedDataSegmentWriter, 0, segmentSizeWriter, 0, NULL, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
-	offset += mbSizeY;
 
-	SCIMemCpy(writerSequence, residuals->Ydct, encodedDataMap, offset, residualsSizeY, SCI_NO_FLAGS, &error);
+	SCIWaitForDMAQueue(dmaQueue, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
-	offset += residualsSizeY;
-
-	SCIMemCpy(writerSequence, mbs[U_COMPONENT], encodedDataMap, offset, mbSizeU, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-	offset += mbSizeU;
-
-	SCIMemCpy(writerSequence, residuals->Udct, encodedDataMap, offset, residualsSizeU, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-	offset += residualsSizeU;
-
-	SCIMemCpy(writerSequence, mbs[V_COMPONENT], encodedDataMap, offset, mbSizeV, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-	offset += mbSizeV;
-
-	SCIMemCpy(writerSequence, residuals->Vdct, encodedDataMap, offset, residualsSizeV, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-	offset += residualsSizeV;
 }
 
 void signal_reader()

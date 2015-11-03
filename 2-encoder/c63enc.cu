@@ -366,7 +366,8 @@ int main(int argc, char **argv)
 	struct c63_common *cm = init_c63_enc(width, height);
 
 	image = init_image_segment(cm);
-	init_encoded_data_segment(cm);
+	init_remote_encoded_data_segment(cm);
+	init_local_encoded_data_segment();
 
 	yuv_t* image_gpu = create_image_gpu(cm);
 

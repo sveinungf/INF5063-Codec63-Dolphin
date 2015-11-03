@@ -23,8 +23,6 @@ extern "C" {
 extern int optind;
 extern char *optarg;
 
-static yuv_t image;
-
 static void zero_out_prediction(struct c63_common* cm)
 {
 	struct frame* frame = cm->curframe;
@@ -240,11 +238,11 @@ static void deinit_cuda_data(c63_common* cm)
 	cudaFree(cm->cuda_data.sad_index_resultsV);
 }
 
-static void copy_image_to_gpu(struct c63_common* cm, yuv_t* image, yuv_t* image_gpu)
+static void copy_image_to_gpu(struct c63_common* cm, const struct segment_yuv& image, yuv_t* image_gpu)
 {
-	cudaMemcpyAsync(image_gpu->Y, image->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamY);
-	cudaMemcpyAsync(image_gpu->U, image->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamU);
-	cudaMemcpyAsync(image_gpu->V, image->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamV);
+	cudaMemcpyAsync(image_gpu->Y, (void*) image.Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamY);
+	cudaMemcpyAsync(image_gpu->U, (void*) image.U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamU);
+	cudaMemcpyAsync(image_gpu->V, (void*) image.V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamV);
 }
 
 struct c63_common* init_c63_enc(int width, int height)
@@ -365,7 +363,7 @@ int main(int argc, char **argv)
 
 	struct c63_common *cm = init_c63_enc(width, height);
 
-	image = init_image_segment(cm);
+	struct segment_yuv image = init_image_segment(cm);
 	init_remote_encoded_data_segment(cm);
 	init_local_encoded_data_segment();
 
@@ -393,7 +391,7 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		copy_image_to_gpu(cm, &image, image_gpu);
+		copy_image_to_gpu(cm, image, image_gpu);
 
 		c63_encode_image(cm, image_gpu);
 

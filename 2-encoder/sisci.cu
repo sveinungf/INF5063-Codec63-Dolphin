@@ -1,7 +1,6 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_common.h"
 #include "../common/sisci_errchk.h"
 #include "sisci.h"
 
@@ -144,9 +143,9 @@ void cleanup_SISCI()
 	SCITerminate();
 }
 
-yuv_t init_image_segment(struct c63_common* cm)
+struct segment_yuv init_image_segment(struct c63_common* cm)
 {
-	yuv_t image;
+	struct segment_yuv image;
 	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | SEGMENT_ENCODER_IMAGE;
 
 	unsigned int segmentSizeY = cm->ypw * cm->yph * sizeof(uint8_t);

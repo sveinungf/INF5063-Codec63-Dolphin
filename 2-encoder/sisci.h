@@ -1,6 +1,7 @@
 #ifndef SISCI_H_
 #define SISCI_H_
 
+#include "../common/sisci_common.h"
 #include "c63.h"
 
 typedef enum {
@@ -11,7 +12,7 @@ typedef enum {
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode);
 void cleanup_SISCI();
 
-yuv_t init_image_segment(struct c63_common* cm);
+struct segment_yuv init_image_segment(struct c63_common* cm);
 void init_remote_encoded_data_segment(struct c63_common* cm);
 void init_local_encoded_data_segment();
 void cleanup_segments();

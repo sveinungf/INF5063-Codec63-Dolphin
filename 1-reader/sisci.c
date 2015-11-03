@@ -83,7 +83,7 @@ void cleanup_SISCI()
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV)
 {
 	struct segment_yuv image;
-	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 0;
+	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 167;
 	unsigned int remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8)
 			| SEGMENT_ENCODER_IMAGE;
 

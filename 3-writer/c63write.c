@@ -69,6 +69,30 @@ struct c63_common* init_c63_enc()
   return cm;
 }
 
+static void set_offsets_and_pointers(struct c63_common *cm) {
+	// Set offsets within segment
+	keyframe_offset = 0;
+
+	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
+	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+
+	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
+	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
+
+
+	// Set pointers to macroblocks
+	cm->curframe->mbs[Y_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_Y);
+	cm->curframe->mbs[U_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_U);
+	cm->curframe->mbs[V_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_V);
+
+	// Set pointers to residuals
+	cm->curframe->residuals->Ydct = (int16_t*) (local_buffer + residuals_offset_Y);
+	cm->curframe->residuals->Udct = (int16_t*) (local_buffer + residuals_offset_U);
+	cm->curframe->residuals->Vdct = (int16_t*) (local_buffer + residuals_offset_V);
+}
+
 
 static void print_help()
 {
@@ -133,7 +157,11 @@ int main(int argc, char **argv)
   struct c63_common *cm = init_c63_enc();
   cm->e_ctx.fp = outfile;
 
-  init_local_segment(cm, local_buffer, &keyframe_offset);
+  local_buffer = init_local_segment(sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) +
+		  (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +
+		  (cm->ypw*cm->yph + cm->upw*cm->uph + cm->vpw*cm->vph) * sizeof(int16_t));
+
+  set_offsets_and_pointers(cm);
 
   /* Encode input frames */
   int numframes = 0;
@@ -143,7 +171,7 @@ int main(int argc, char **argv)
   while (1)
   {
 	  printf("Waiting for data from encoder...\n");
-	  waitForEncoder(&done, &length);
+	  wait_for_encoder(&done, &length);
 	  printf("Done!\n");
 
 	  if(done) {
@@ -156,7 +184,7 @@ int main(int argc, char **argv)
 	  ++numframes;
 
 	  // Signal encoder that writer is ready for a new frame
-	  signalEncoder();
+	  signal_encoder();
   }
 
   free(cm->curframe->residuals);

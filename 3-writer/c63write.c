@@ -7,7 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+//#include <unistd.h>
+//#include <pthread.h>
 #include "c63.h"
 #include "c63_write.h"
 #include "tables.h"
@@ -168,31 +169,57 @@ int main(int argc, char **argv)
 
   uint8_t done = 0;
   unsigned int length = 1;
+
+  int fd = fileno(outfile);
+  int written = 0;
+  //pid_t child_pid = fork();
+
   while (1)
   {
-	  printf("Waiting for data from encoder...\n");
-	  wait_for_encoder(&done, &length);
-	  printf("Done!\n");
+	 // if(child_pid != 0) {
+		  printf("Frame %d:", numframes);
+		  fflush(stdout);
 
-	  if(done) {
-		  break;
-	  }
+		  wait_for_encoder(&done, &length);
 
-	  cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
+		  if (!done)
+		  {
+			  printf(" Received");
+			  fflush(stdout);
+		  }
+		  else
+		  {
+			  printf("\rNo more frames from encoder\n");
+			  break;
+		  }
 
-	  write_frame(cm);
-	  ++numframes;
+		  cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
 
-	  // Signal encoder that writer is ready for a new frame
-	  signal_encoder();
+		  write_frame(cm);
+		  printf(", written\n");
+		  ++numframes;
+
+		  // Signal encoder that writer is ready for a new frame
+		  signal_encoder();
+		  //written = 1;
+	 /* }
+	  else {
+		  while(!written);
+		  fsync(fd);
+		  written = 0;
+	  }*/
   }
+	  /*
+  if(child_pid == 0) {
+	  exit(1);
+  }*/
+
+  cleanup_SISCI();
 
   free(cm->curframe->residuals);
   free(cm->curframe);
   free(cm);
   fclose(outfile);
-
-  cleanup_SISCI();
 
   return EXIT_SUCCESS;
 }

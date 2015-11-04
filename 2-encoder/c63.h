@@ -81,7 +81,7 @@ struct macroblock
 
 struct frame
 {
-  yuv_t *orig_gpu;			// Original input image
+  struct segment_yuv *orig_gpu;			// Original input image
   yuv_t *recons_gpu;		// Reconstructed image
   yuv_t *predicted_gpu;		// Predicted frame from intra-prediction
 

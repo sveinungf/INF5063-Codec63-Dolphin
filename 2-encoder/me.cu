@@ -11,6 +11,8 @@
 #include "dsp.h"
 #include "me.h"
 
+#include "../common/sisci_common.h"
+
 
 __device__
 static void min_warp_reduce(int i, volatile int* values)
@@ -321,7 +323,13 @@ static void set_motion_vectors(struct macroblock* __restrict__ mbs, const int* _
 void c63_motion_estimate(struct c63_common *cm)
 {
 	struct macroblock** mbs = cm->curframe->mbs_gpu;
-	yuv_t* orig = cm->curframe->orig_gpu;
+	yuv_t orig2;
+	orig2.Y = (uint8_t*)cm->curframe->orig_gpu->Y;
+	orig2.U = (uint8_t*)cm->curframe->orig_gpu->U;
+	orig2.V = (uint8_t*)cm->curframe->orig_gpu->V;
+
+	yuv_t *orig = &orig2;
+
 	yuv_t* ref = cm->refframe->recons_gpu;
 
 	const int wY = cm->padw[Y_COMPONENT];

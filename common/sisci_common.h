@@ -31,9 +31,9 @@ typedef enum {
 
 struct segment_yuv
 {
-	volatile uint8_t* Y;
-	volatile uint8_t* U;
-	volatile uint8_t* V;
+	const volatile uint8_t* Y;
+	const volatile uint8_t* U;
+	const volatile uint8_t* V;
 };
 
 #endif /* SISCI_COMMON_H_ */

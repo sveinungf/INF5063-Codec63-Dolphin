@@ -22,8 +22,7 @@ static unsigned int writerNodeId;
 static sci_local_interrupt_t interruptFromWriter;
 static sci_remote_data_interrupt_t interruptToWriter;
 static sci_remote_segment_t encodedDataSegmentWriter;
-static sci_map_t encodedDataMapWriter;
-static sci_sequence_t writerSequence;
+
 static uint32_t segmentSizeWriter;
 
 static sci_local_segment_t encodedDataSegmentLocal;
@@ -155,7 +154,17 @@ struct segment_yuv init_image_segment(struct c63_common* cm)
 
 	sci_error_t error;
 
-	SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	//SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
+	sisci_assert(error);
+
+	void *cudaBuffer;
+	cudaMalloc(&cudaBuffer, segmentSize);
+
+	struct cudaPointerAttributes attributes;
+	cudaPointerGetAttributes(&attributes, cudaBuffer);
+
+	SCIAttachPhysicalMemory(0, attributes.devicePointer, 0, segmentSize, imageSegment, SCI_FLAG_CUDA_BUFFER, &error);
 	sisci_assert(error);
 
 	SCIPrepareSegment(imageSegment, localAdapterNo, SCI_NO_FLAGS, &error);
@@ -192,13 +201,6 @@ void init_remote_encoded_data_segment(struct c63_common* cm)
 
 	// Get segment size
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentWriter);
-
-	unsigned int offset = 0;
-	SCIMapRemoteSegment(encodedDataSegmentWriter, &encodedDataMapWriter, offset, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-
-    SCICreateMapSequence(encodedDataMapWriter, &writerSequence, 0, &error);
-    sisci_assert(error);
 
     keyframeSize = sizeof(int);
     mbSizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
@@ -257,15 +259,9 @@ static void cleanup_local_segment(sci_local_segment_t* segment, sci_map_t* map)
 	sisci_check(error);
 }
 
-static void cleanup_remote_segment(sci_remote_segment_t* segment, sci_map_t* map, sci_sequence_t* sequence)
+static void cleanup_remote_segment(sci_remote_segment_t* segment)
 {
 	sci_error_t error;
-
-	SCIRemoveSequence(*sequence, SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIUnmapSegment(*map, SCI_NO_FLAGS, &error);
-	sisci_check(error);
 
 	SCIDisconnectSegment(*segment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
@@ -275,7 +271,7 @@ void cleanup_segments()
 {
 	cleanup_local_segment(&imageSegment, &imageMap);
 	cleanup_local_segment(&encodedDataSegmentLocal, &encodedDataMapLocal);
-	cleanup_remote_segment(&encodedDataSegmentWriter, &encodedDataMapWriter, &writerSequence);
+	cleanup_remote_segment(&encodedDataSegmentWriter);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)

@@ -14,7 +14,7 @@ typedef enum {
 
 // Interrupts
 typedef enum {
-	READY_FOR_ORIG_TRANSFER = 10,
+	READY_FOR_ORIG_TRANSFER = 1000,
 	MORE_DATA_TRANSFERRED = 15,
 	ENCODED_FRAME_TRANSFERRED = 20,
 	DATA_WRITTEN = 25
@@ -22,11 +22,11 @@ typedef enum {
 
 // Segments
 typedef enum {
-	SEGMENT_ENCODER_IMAGE
+	SEGMENT_ENCODER_IMAGE = 177
 } c63_segment_encoder;
 
 typedef enum {
-	SEGMENT_WRITER_ENCODED
+	SEGMENT_WRITER_ENCODED = 193
 } c63_segment_writer;
 
 struct segment_yuv

@@ -8,29 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common/sisci_common.h"
 #include "c63.h"
 #include "c63_write.h"
 #include "tables.h"
 
-#include "sisci_api.h"
+#include "sisci.h"
 
-// SISCI variables
-static sci_desc_t sd;
-
-static unsigned int localAdapterNo;
-static unsigned int localNodeId;
-static unsigned int encoderNodeId;
-
-static sci_local_segment_t localSegment;
 static volatile uint8_t *local_buffer;
-static sci_map_t localMap;
-
-static sci_local_data_interrupt_t interruptFromEncoder;
-static sci_remote_interrupt_t interruptToEncoder;
-
-static unsigned int interruptFromEncoderNo;
-
 static uint32_t keyframe_offset;
 
 static char *output_file;
@@ -85,108 +69,18 @@ struct c63_common* init_c63_enc()
   return cm;
 }
 
-
-static sci_error_t init_SISCI() {
-
-	// Initialisation of SISCI API
-	sci_error_t error;
-	SCIInitialize(SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	// Initialize descriptors
-	SCIOpen(&sd, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
-	if(error != SCI_ERR_OK) {
-		return error;
-	}
-
-	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
-	interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED;
-	SCICreateDataInterrupt(sd, &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
-	if (error != SCI_ERR_OK) {
-		fprintf(stderr,"SCICreateInterrupt failed - Error code 0x%x\n", error);
-		return error;
-	}
-
-	// Connect reader node to remote interrupt at processing machine
-	do {
-		SCIConnectInterrupt(sd, &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-	return SCI_ERR_OK;
-
-}
-
-static inline sci_error_t receive_width_and_height() {
-	printf("Waiting for width and height from encoder...\n");
-	uint32_t widthAndHeight[2];
-	unsigned int length = 2*sizeof(uint32_t);
-
-	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptFromEncoder, &widthAndHeight, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	if(error != SCI_ERR_OK) {
-		return error;
-	}
-
-	width = widthAndHeight[0];
-	height = widthAndHeight[1];
-
-	printf("Done\n");
-	return SCI_ERR_OK;
-}
-
-static sci_error_t init_SISCI_segments(struct c63_common *cm) {
-	sci_error_t error;
-
-	// Set local segment id
-	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | SEGMENT_WRITER_ENCODED;
-
-	// Set segment size
-	uint32_t localSegmentSize = sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) + (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +
-			(cm->ypw*cm->yph + cm->upw*cm->uph + cm->vpw*cm->vph) * sizeof(int16_t);
-
-	// Create the local segment for the processing machine to copy into
-	SCICreateSegment(sd, &localSegment, localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	// Map the local segments
-	int offset = 0;
-	local_buffer = SCIMapLocalSegment(localSegment , &localMap, offset, localSegmentSize, NULL, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	// Make segments accessible from the network adapter
-	SCIPrepareSegment(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
-	// Make segments accessible from other nodes
-	SCISetSegmentAvailable(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
-	if (error != SCI_ERR_OK) {
-		return error;
-	}
-
+static void set_offsets_and_pointers(struct c63_common *cm) {
 	// Set offsets within segment
 	keyframe_offset = 0;
 
 	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t residuals_offset_Y = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
+	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
 
-	uint32_t mb_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
-	uint32_t residuals_offset_U = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
+	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
 
-	uint32_t mb_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
-	uint32_t residuals_offset_V = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
 
 	// Set pointers to macroblocks
 	cm->curframe->mbs[Y_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_Y);
@@ -197,24 +91,8 @@ static sci_error_t init_SISCI_segments(struct c63_common *cm) {
 	cm->curframe->residuals->Ydct = (int16_t*) (local_buffer + residuals_offset_Y);
 	cm->curframe->residuals->Udct = (int16_t*) (local_buffer + residuals_offset_U);
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffer + residuals_offset_V);
-
-	return SCI_ERR_OK;
 }
 
-static sci_error_t cleanup_SISCI() {
-	sci_error_t error;
-	SCIDisconnectInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
-	SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
-
-	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
-
-	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
-
-	SCIClose(sd, SCI_NO_FLAGS, &error);
-	SCITerminate();
-
-	return SCI_ERR_OK;
-}
 
 static void print_help()
 {
@@ -233,6 +111,9 @@ int main(int argc, char **argv)
   int c;
 
   if (argc == 1) { print_help(); }
+
+  unsigned int localAdapterNo = 0;
+  unsigned int encoderNodeId = 0;
 
   while ((c = getopt(argc, argv, "a:r:o:")) != -1)
   {
@@ -269,24 +150,18 @@ int main(int argc, char **argv)
     exit(EXIT_FAILURE);
   }
 
-  sci_error_t error;
-  error = init_SISCI();
-  if (error != SCI_ERR_OK) {
-	fprintf(stderr,"init_SISCI failed - Error code 0x%x\n", error);
-	exit(EXIT_FAILURE);
-  }
+  init_SISCI(localAdapterNo, encoderNodeId);
 
-  error = receive_width_and_height();
-  if (error != SCI_ERR_OK) {
-  	fprintf(stderr,"receive_width_and_height failed - Error code 0x%x\n", error);
-  	exit(EXIT_FAILURE);
-}
+  receive_width_and_height(&width, &height);
 
   struct c63_common *cm = init_c63_enc();
   cm->e_ctx.fp = outfile;
 
-  init_SISCI_segments(cm);
-  printf("her\n");
+  local_buffer = init_local_segment(sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) +
+		  (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +
+		  (cm->ypw*cm->yph + cm->upw*cm->uph + cm->vpw*cm->vph) * sizeof(int16_t));
+
+  set_offsets_and_pointers(cm);
 
   /* Encode input frames */
   int numframes = 0;
@@ -296,11 +171,7 @@ int main(int argc, char **argv)
   while (1)
   {
 	  printf("Waiting for data from encoder...\n");
-	  sci_error_t error;
-	  SCIWaitForDataInterrupt(interruptFromEncoder, &done, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	  if(error != SCI_ERR_OK) {
-		  return error;
-	  }
+	  wait_for_encoder(&done, &length);
 	  printf("Done!\n");
 
 	  if(done) {
@@ -312,11 +183,8 @@ int main(int argc, char **argv)
 	  write_frame(cm);
 	  ++numframes;
 
-	  SCITriggerInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
-	  if (error != SCI_ERR_OK) {
-		  fprintf(stderr,"SCITriggerInterrupt failed - Error code 0x%x\n", error);
-		  exit(EXIT_FAILURE);
-	  }
+	  // Signal encoder that writer is ready for a new frame
+	  signal_encoder();
   }
 
   free(cm->curframe->residuals);
@@ -324,11 +192,7 @@ int main(int argc, char **argv)
   free(cm);
   fclose(outfile);
 
-  error = cleanup_SISCI();
-  if (error != SCI_ERR_OK) {
-	fprintf(stderr, "Error during SISCI cleanup - error code: %x\n", error);
-	exit(EXIT_FAILURE);
-  }
+  cleanup_SISCI();
 
   return EXIT_SUCCESS;
 }

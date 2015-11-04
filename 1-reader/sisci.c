@@ -83,7 +83,7 @@ void cleanup_SISCI()
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV)
 {
 	struct segment_yuv image;
-	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 0;
+	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 167;
 	unsigned int remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8)
 			| SEGMENT_ENCODER_IMAGE;
 
@@ -143,12 +143,7 @@ void send_width_and_height(uint32_t width, uint32_t height)
 void wait_for_encoder()
 {
 	sci_error_t error;
-
-	do
-	{
-		SCIWaitForInterrupt(interruptFromEncoder, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	}
-	while (error != SCI_ERR_OK);
+	SCIWaitForInterrupt(interruptFromEncoder, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 }
 
 void transfer_image_async()
@@ -159,7 +154,7 @@ void transfer_image_async()
 	sisci_assert(error);
 }
 
-void wait_for_transfer_image()
+void wait_for_image_transfer()
 {
 	sci_error_t error;
 

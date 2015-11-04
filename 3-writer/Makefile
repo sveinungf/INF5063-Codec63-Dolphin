@@ -31,7 +31,7 @@ all: c63write
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 	
-c63write: c63write.o tables.o io.o c63_write.o
+c63write: c63write.o tables.o io.o c63_write.o sisci.o
 	$(CC) $^ $(LDFLAGS) -o $@
 	
 clean:

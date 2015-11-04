@@ -40,11 +40,11 @@ unsigned int residualsSizeU;
 unsigned int residualsSizeV;
 
 uint32_t keyframe_offset;
-uint32_t mbY_offset;
+uint32_t mbOffsetY;
 uint32_t residualsY_offset;
-uint32_t mbU_offset;
+uint32_t mbOffsetU;
 uint32_t residualsU_offset;
-uint32_t mbV_offset;
+uint32_t mbOffsetV;
 uint32_t residualsV_offset;
 
 int *keyframe;
@@ -209,13 +209,12 @@ void init_remote_encoded_data_segment(struct c63_common* cm)
     residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
 
     keyframe_offset = 0;
-    mbY_offset = keyframe_offset + keyframeSize;
-    residualsY_offset = mbY_offset + mbSizeY;
-    mbU_offset = residualsY_offset + residualsSizeY;
-    residualsU_offset = mbU_offset + mbSizeU;
-    mbV_offset = residualsU_offset + residualsSizeU;
-    residualsV_offset = mbV_offset + mbSizeV;
-
+    mbOffsetY = keyframe_offset + keyframeSize;
+    mbOffsetU = mbOffsetY + mbSizeY;
+    mbOffsetV = mbOffsetU + mbSizeU;
+    residualsY_offset = mbOffsetV + mbSizeV;
+    residualsU_offset = residualsY_offset + residualsSizeY;
+    residualsV_offset = residualsU_offset + residualsSizeU;
 
 }
 
@@ -235,13 +234,12 @@ void init_local_encoded_data_segment() {
 
 	keyframe = (int*) ((uint8_t*) buffer + keyframe_offset);
 
-	mb_Y = (struct macroblock*) ((uint8_t*) buffer + mbY_offset);
+	mb_Y = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
+	mb_U = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
+	mb_V = (struct macroblock*) ((uint8_t*) buffer + mbOffsetV);
+
 	residuals_Y = (dct_t*) ((uint8_t*) buffer + residualsY_offset);
-
-	mb_U = (struct macroblock*) ((uint8_t*) buffer + mbU_offset);
 	residuals_U = (dct_t*) ((uint8_t*) buffer + residualsU_offset);
-
-	mb_V = (struct macroblock*) ((uint8_t*) buffer + mbV_offset);
 	residuals_V = (dct_t*) ((uint8_t*) buffer + residualsV_offset);
 }
 
@@ -334,11 +332,12 @@ void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* res
 
 	*keyframe = keyframe_val;
 	memcpy(mb_Y, mbs[Y_COMPONENT], mbSizeY);
-	memcpy(residuals_Y, residuals->Ydct, residualsSizeY);
 	memcpy(mb_U, mbs[U_COMPONENT], mbSizeU);
-	memcpy(residuals_U, residuals->Udct, residualsSizeU);
 	memcpy(mb_V, mbs[V_COMPONENT], mbSizeV);
-	memcpy(residuals_V, residuals->Vdct, residualsSizeV);
+
+	memcpy(residuals_Y, residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
+	//memcpy(residuals_U, residuals->Udct, residualsSizeU);
+	//memcpy(residuals_V, residuals->Vdct, residualsSizeV);
 
 	SCIStartDmaTransfer(dmaQueue, encodedDataSegmentLocal, encodedDataSegmentWriter, 0, segmentSizeWriter, 0, NULL, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);

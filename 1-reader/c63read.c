@@ -72,6 +72,7 @@ static void init_segment_sizes() {
 	segmentSize_V = vpw*vph*sizeof(uint8_t);
 }
 
+
 static void print_help() {
 	printf("Usage: ./c63enc [options] input_file\n");
 	printf("Commandline options:\n");
@@ -124,6 +125,7 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
+
 	init_SISCI(localAdapterNo, encoderNodeId);
 
 	send_width_and_height(width, height);
@@ -166,7 +168,7 @@ int main(int argc, char **argv) {
 		fflush(stdout);
 
 		transfer_image_async();
-		wait_for_transfer_image();
+		wait_for_image_transfer();
 
 		printf("Done!\n");
 

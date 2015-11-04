@@ -181,9 +181,22 @@ struct frame* create_frame(struct c63_common *cm)
 	struct frame *f = (frame*) malloc(sizeof(struct frame));
 
 	f->residuals = (dct_t*) malloc(sizeof(dct_t));
+
+	uint32_t residualsSizeY = cm->ypw * cm->yph;
+	uint32_t residualsSizeU = cm->upw * cm->uph;
+	uint32_t residualsSizeV = cm->vpw * cm->vph;
+
+	cudaMallocHost((void**)&f->residuals->base, (residualsSizeY + residualsSizeU + residualsSizeV) * sizeof(int16_t));
+
+	f->residuals->Ydct = f->residuals->base;
+	f->residuals->Udct = f->residuals->Ydct + residualsSizeY;
+	f->residuals->Vdct = f->residuals->Udct + residualsSizeU;
+
+	/*
 	cudaMallocHost((void**)&f->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t));
 	cudaMallocHost((void**)&f->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t));
 	cudaMallocHost((void**)&f->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t));
+	*/
 
 	size_t sizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
 	size_t sizeUV = cm->mb_rowsUV * cm->mb_colsUV * sizeof(struct macroblock);
@@ -200,9 +213,12 @@ void destroy_frame(struct frame *f)
 {
 	deinit_frame_gpu(f);
 
+	/*
 	cudaFreeHost(f->residuals->Ydct);
 	cudaFreeHost(f->residuals->Udct);
 	cudaFreeHost(f->residuals->Vdct);
+	*/
+	cudaFreeHost(f->residuals->base);
 	free(f->residuals);
 
 	cudaFreeHost(f->mbs[Y_COMPONENT]);

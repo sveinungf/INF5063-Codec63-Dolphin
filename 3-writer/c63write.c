@@ -7,8 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <unistd.h>
-//#include <pthread.h>
+#include <unistd.h>
+#include <pthread.h>
 #include "c63.h"
 #include "c63_write.h"
 #include "tables.h"
@@ -26,6 +26,11 @@ static uint32_t height;
 
 yuv_t *image;
 yuv_t *image2;
+
+pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int thread_done = 0;
+int fd;
 
 /* getopt */
 extern char *optarg;
@@ -92,6 +97,16 @@ static void set_offsets_and_pointers(struct c63_common *cm) {
 	cm->curframe->residuals->Ydct = (int16_t*) (local_buffer + residuals_offset_Y);
 	cm->curframe->residuals->Udct = (int16_t*) (local_buffer + residuals_offset_U);
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffer + residuals_offset_V);
+}
+
+static void *flush(void *arg) {
+	pthread_mutex_lock(&mut);
+	while (thread_done == 0) {
+		pthread_cond_wait(&cond, &mut);
+		fsync(fd);
+	}
+	pthread_mutex_unlock(&mut);
+	return NULL;
 }
 
 
@@ -170,9 +185,9 @@ int main(int argc, char **argv)
   uint8_t done = 0;
   unsigned int length = 1;
 
-  int fd = fileno(outfile);
-  int written = 0;
-  //pid_t child_pid = fork();
+  fd = fileno(outfile);
+  pthread_t child;
+  pthread_create(&child, NULL, flush, NULL);
 
   while (1)
   {
@@ -196,23 +211,21 @@ int main(int argc, char **argv)
 		  cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
 
 		  write_frame(cm);
+
+		  // Flush
+		  pthread_cond_signal(&cond);
+
 		  printf(", written\n");
 		  ++numframes;
 
 		  // Signal encoder that writer is ready for a new frame
 		  signal_encoder();
-		  //written = 1;
-	 /* }
-	  else {
-		  while(!written);
-		  fsync(fd);
-		  written = 0;
-	  }*/
   }
-	  /*
-  if(child_pid == 0) {
-	  exit(1);
-  }*/
+
+  pthread_mutex_lock(&mut);
+  thread_done = 1;
+  pthread_cond_signal(&cond);
+  pthread_mutex_unlock(&mut);
 
   cleanup_SISCI();
 

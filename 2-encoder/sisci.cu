@@ -4,6 +4,8 @@
 #include "../common/sisci_errchk.h"
 #include "sisci.h"
 
+#define MIN_SEG_SZ 237569
+
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
@@ -151,6 +153,10 @@ struct segment_yuv init_image_segment(struct c63_common* cm)
 	unsigned int segmentSizeU = cm->upw * cm->uph * sizeof(uint8_t);
 	unsigned int segmentSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
 	unsigned int segmentSize = segmentSizeY + segmentSizeU + segmentSizeV;
+
+	if(segmentSize < MIN_SEG_SZ) {
+		segmentSize = MIN_SEG_SZ;
+	}
 
 	sci_error_t error;
 

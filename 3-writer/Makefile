@@ -22,7 +22,7 @@ INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 
 CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
-LDFLAGS += -L/opt/DIS/lib64 -lsisci
+LDFLAGS += -L/opt/DIS/lib64 -lsisci -lpthread
 
 C63_FILE = ../temp/test.c63
 

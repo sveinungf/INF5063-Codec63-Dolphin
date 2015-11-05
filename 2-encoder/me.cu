@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dsp.h"
 #include "me.h"
 
 #include "../common/sisci_common.h"
@@ -320,7 +319,7 @@ static void set_motion_vectors(struct macroblock* __restrict__ mbs, const int* _
 	mb->mv_y = top + (index_result / (range*2)) - my;
 }
 
-void c63_motion_estimate(struct c63_common *cm)
+void gpu_c63_motion_estimate(struct c63_common *cm)
 {
 	struct macroblock** mbs = cm->curframe->mbs_gpu;
 	yuv_t orig2;
@@ -386,7 +385,7 @@ static void mc_block_8x8_gpu(const struct macroblock* __restrict__ mbs, int w, u
 	predicted[block_offset + i * 8 + j] = ref[(i + blockIdx.y*8 + mv_y) * w + (j + blockIdx.x*8 + mv_x)];
 }
 
-void c63_motion_compensate(struct c63_common *cm)
+void gpu_c63_motion_compensate(struct c63_common *cm)
 {
 	struct macroblock** mbs = cm->curframe->mbs_gpu;
 	yuv_t* pred = cm->curframe->predicted_gpu;

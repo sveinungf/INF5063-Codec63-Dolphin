@@ -49,10 +49,10 @@ static void c63_encode_image(struct c63_common *cm, struct segment_yuv* image_gp
 	if (!cm->curframe->keyframe)
 	{
 		/* Motion Estimation */
-		c63_motion_estimate(cm);
+		gpu_c63_motion_estimate(cm);
 
 		/* Motion Compensation */
-		c63_motion_compensate(cm);
+		gpu_c63_motion_compensate(cm);
 	}
 	else
 	{
@@ -371,11 +371,11 @@ int main(int argc, char **argv)
 
 	while (1)
 	{
-		printf("Frame %d:", numframes);
-		fflush(stdout);
-
 		// The reader sends an interrupt when it has transferred the next frame
 		int done = wait_for_reader();
+
+		printf("Frame %d:", numframes);
+		fflush(stdout);
 
 		if (!done)
 		{
@@ -386,12 +386,12 @@ int main(int argc, char **argv)
 		{
 			printf("\rNo more frames from reader\n");
 
+			wait_for_writer();
+
 			// Send interrupt to writer signaling that encoding has been finished
 			signal_writer(ENCODING_FINISHED);
 			break;
 		}
-
-		//copy_image_to_gpu(cm, image, image_gpu);
 
 		c63_encode_image(cm, &image_gpu);
 
@@ -400,7 +400,7 @@ int main(int argc, char **argv)
 		cudaStreamSynchronize(cm->cuda_data.streamU);
 		cudaStreamSynchronize(cm->cuda_data.streamV);
 
-		printf(", encoded");
+		printf(", encoded\n");
 		fflush(stdout);
 
 		if (numframes != 0) {
@@ -414,10 +414,8 @@ int main(int argc, char **argv)
 		// Reader can transfer next frame
 		signal_reader();
 
-		printf(", sent\n");
-
 		// Send interrupt to writer signaling the data has been transfered
-		signal_writer(DATA_TRANSFERRED);
+		//signal_writer(DATA_TRANSFERRED);
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;

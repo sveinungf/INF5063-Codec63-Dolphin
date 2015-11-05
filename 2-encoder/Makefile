@@ -9,8 +9,8 @@ NODE_ID_READER ?= 4
 NODE_ID_WRITER ?= 8
 LOCAL_ADAPTER_NO ?= 0
 
-CCFLAGS = -Wall
-NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
+CCFLAGS = -Wall -march=native
+NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo -D_REENTRANT
 PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
 LDFLAGS = -lm
 
@@ -67,7 +67,7 @@ all: c63enc
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 
-c63enc: c63enc.o dsp.o tables.o common.o me.o sisci.o
+c63enc: c63enc.o tables.o zimd_dsp.o common.o me.o sisci.o
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:

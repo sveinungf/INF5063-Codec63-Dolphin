@@ -8,7 +8,6 @@
 #include <string.h>
 
 #include "common.h"
-#include "dsp.h"
 
 
 __device__

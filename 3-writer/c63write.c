@@ -170,14 +170,20 @@ int main(int argc, char **argv)
 
   receive_width_and_height(&width, &height);
 
-  struct c63_common *cm = init_c63_enc();
-  cm->e_ctx.fp = outfile;
+  struct c63_common *cm1 = init_c63_enc();
+  //struct c63_common *cm2 = init_c63_enc();
 
-  local_buffer = init_local_segment(sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) +
-		  (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +
-		  (cm->ypw*cm->yph + cm->upw*cm->uph + cm->vpw*cm->vph) * sizeof(int16_t));
+  cm1->e_ctx.fp = outfile;
 
-  set_offsets_and_pointers(cm);
+  uint32_t localSegmentSize = sizeof(int) + (cm1->mb_rows * cm1->mb_cols + (cm1->mb_rows/2)*(cm1->mb_cols/2) +
+		  (cm1->mb_rows/2)*(cm1->mb_cols/2))*sizeof(struct macroblock) +
+		  (cm1->ypw*cm1->yph + cm1->upw*cm1->uph + cm1->vpw*cm1->vph) * sizeof(int16_t);
+
+  uint32_t totalSegmentSize = localSegmentSize*2;
+
+  local_buffer = init_local_segment(totalSegmentSize);
+
+  set_offsets_and_pointers(cm1);
 
   /* Encode input frames */
   int numframes = 0;
@@ -207,9 +213,9 @@ int main(int argc, char **argv)
 		  break;
 	  }
 
-	  cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
+	  cm1->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
 
-	  write_frame(cm);
+	  write_frame(cm1);
 
 	  // Flush
 	  pthread_cond_signal(&cond);
@@ -228,9 +234,16 @@ int main(int argc, char **argv)
 
   cleanup_SISCI();
 
-  free(cm->curframe->residuals);
-  free(cm->curframe);
-  free(cm);
+  free(cm1->curframe->residuals);
+  free(cm1->curframe);
+  free(cm1);
+
+  /*
+  free(cm2->curframe->residuals);
+  free(cm2->curframe);
+  free(cm2);
+  */
+
   fclose(outfile);
 
   return EXIT_SUCCESS;

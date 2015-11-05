@@ -1,5 +1,5 @@
-#ifndef C63_COMMON_H_
-#define C63_COMMON_H_
+#ifndef C63_COMMON_SIMD_H_
+#define C63_COMMON_SIMD_H_
 
 #include <inttypes.h>
 
@@ -18,4 +18,4 @@ void destroy_frame(struct frame *f);
 
 void dump_image(yuv_t *image, int w, int h, FILE *fp);
 
-#endif  /* C63_COMMON_H_ */
+#endif  /* C63_COMMON_SIMD_H_ */

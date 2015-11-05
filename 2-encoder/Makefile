@@ -64,6 +64,9 @@ all: c63enc
 
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
+
+#%.o: %.c
+#	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 

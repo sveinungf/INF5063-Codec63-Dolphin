@@ -11,6 +11,7 @@ static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static sci_desc_t sd;
 static sci_desc_t vd;
+static void *cudaBuffer;
 
 // Reader
 static unsigned int readerNodeId;
@@ -164,7 +165,6 @@ struct segment_yuv init_image_segment(struct c63_common* cm)
 	SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
 	sisci_assert(error);
 
-	void *cudaBuffer;
 	cudaMalloc(&cudaBuffer, segmentSize);
 
 	struct cudaPointerAttributes attributes;
@@ -277,6 +277,8 @@ void cleanup_segments()
 	cleanup_local_segment(&imageSegment, &imageMap);
 	cleanup_local_segment(&encodedDataSegmentLocal, &encodedDataMapLocal);
 	cleanup_remote_segment(&encodedDataSegmentWriter);
+
+	cudaFree(cudaBuffer);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)

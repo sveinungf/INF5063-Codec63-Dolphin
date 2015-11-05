@@ -238,12 +238,14 @@ static void deinit_cuda_data(c63_common* cm)
 	cudaFree(cm->cuda_data.sad_index_resultsV);
 }
 
+/*
 static void copy_image_to_gpu(struct c63_common* cm, const struct segment_yuv& image, yuv_t* image_gpu)
 {
 	cudaMemcpyAsync(image_gpu->Y, (void*) image.Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamY);
 	cudaMemcpyAsync(image_gpu->U, (void*) image.U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamU);
 	cudaMemcpyAsync(image_gpu->V, (void*) image.V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamV);
 }
+*/
 
 struct c63_common* init_c63_enc(int width, int height)
 {
@@ -408,7 +410,7 @@ int main(int argc, char **argv)
 			wait_for_writer();
 		}
 
-		// Copy data frame to remote segment
+		// Copy data frame to remote segment - interrupt to writer handled by callback
 		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals);
 
 		// Reader can transfer next frame

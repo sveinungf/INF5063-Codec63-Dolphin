@@ -47,7 +47,7 @@ all: c63read
 	$(CC) $(CCFLAGS) -c $< -o $@
 
 c63read: c63read.o sisci.o
-	$(CC) $^ $(LDFLAGS) -o $@
+	$(CC) $^ $(LDFLAGS) $(CCFLAGS) -o $@
 
 clean:
 	rm -f *.o c63read

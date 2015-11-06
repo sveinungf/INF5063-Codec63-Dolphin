@@ -15,7 +15,7 @@
 
 #include "sisci.h"
 
-static volatile uint8_t *local_buffer;
+static volatile uint8_t *local_buffers[2];
 static uint32_t keyframe_offset;
 
 static char *output_file;
@@ -75,7 +75,7 @@ struct c63_common* init_c63_enc()
   return cm;
 }
 
-static void set_offsets_and_pointers(struct c63_common *cm) {
+static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	// Set offsets within segment
 	keyframe_offset = 0;
 
@@ -89,14 +89,14 @@ static void set_offsets_and_pointers(struct c63_common *cm) {
 
 
 	// Set pointers to macroblocks
-	cm->curframe->mbs[Y_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_Y);
-	cm->curframe->mbs[U_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_U);
-	cm->curframe->mbs[V_COMPONENT] = (struct macroblock*) (local_buffer + mb_offset_V);
+	cm->curframe->mbs[Y_COMPONENT] = (struct macroblock*) (local_buffers[segNum] + mb_offset_Y);
+	cm->curframe->mbs[U_COMPONENT] = (struct macroblock*) (local_buffers[segNum] + mb_offset_U);
+	cm->curframe->mbs[V_COMPONENT] = (struct macroblock*) (local_buffers[segNum] + mb_offset_V);
 
 	// Set pointers to residuals
-	cm->curframe->residuals->Ydct = (int16_t*) (local_buffer + residuals_offset_Y);
-	cm->curframe->residuals->Udct = (int16_t*) (local_buffer + residuals_offset_U);
-	cm->curframe->residuals->Vdct = (int16_t*) (local_buffer + residuals_offset_V);
+	cm->curframe->residuals->Ydct = (int16_t*) (local_buffers[segNum] + residuals_offset_Y);
+	cm->curframe->residuals->Udct = (int16_t*) (local_buffers[segNum] + residuals_offset_U);
+	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
 static void *flush(void *arg) {
@@ -179,11 +179,11 @@ int main(int argc, char **argv)
 		  (cm1->mb_rows/2)*(cm1->mb_cols/2))*sizeof(struct macroblock) +
 		  (cm1->ypw*cm1->yph + cm1->upw*cm1->uph + cm1->vpw*cm1->vph) * sizeof(int16_t);
 
-  uint32_t totalSegmentSize = localSegmentSize*2;
+  uint32_t totalSegmentSize = localSegmentSize;
 
-  local_buffer = init_local_segment(totalSegmentSize);
+  local_buffers[0] = init_local_segment(totalSegmentSize, 0);
 
-  set_offsets_and_pointers(cm1);
+  set_offsets_and_pointers(cm1, 0);
 
   /* Encode input frames */
   int numframes = 0;
@@ -194,6 +194,8 @@ int main(int argc, char **argv)
   fd = fileno(outfile);
   pthread_t child;
   pthread_create(&child, NULL, flush, NULL);
+
+  int imgNum = 0;
 
   while (1)
   {
@@ -213,7 +215,7 @@ int main(int argc, char **argv)
 		  break;
 	  }
 
-	  cm1->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
+	  cm1->curframe->keyframe = ((int*) local_buffers[imgNum])[keyframe_offset];
 
 	  write_frame(cm1);
 

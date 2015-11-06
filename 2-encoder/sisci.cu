@@ -145,15 +145,16 @@ void cleanup_SISCI()
 	SCITerminate();
 }
 
-struct segment_yuv init_image_segment(struct c63_common* cm)
+void init_image_segment(struct c63_common* cm, struct segment_yuv *images)
 {
-	struct segment_yuv image;
+	//struct segment_yuv image;
 	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | SEGMENT_ENCODER_IMAGE;
 
-	unsigned int segmentSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
-	unsigned int segmentSizeU = cm->upw * cm->uph * sizeof(uint8_t);
-	unsigned int segmentSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
-	unsigned int segmentSize = segmentSizeY + segmentSizeU + segmentSizeV;
+	unsigned int imageSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
+	unsigned int imageSizeU = cm->upw * cm->uph * sizeof(uint8_t);
+	unsigned int imageSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
+	unsigned int imageSize = imageSizeY + imageSizeU + imageSizeV;
+	unsigned int segmentSize = 2*(imageSize);
 
 	if(segmentSize < MIN_SEG_SZ) {
 		segmentSize = MIN_SEG_SZ;
@@ -180,17 +181,18 @@ struct segment_yuv init_image_segment(struct c63_common* cm)
 	sisci_assert(error);
 
 	unsigned int offset = 0;
-	image.Y = (uint8_t*) buffer + offset;
-	offset += segmentSizeY;
-	image.U = (uint8_t*) buffer + offset;
-	offset += segmentSizeU;
-	image.V = (uint8_t*) buffer + offset;
-	offset += segmentSizeV;
+	int i;
+	for (i = 0; i < 2; ++i) {
+		images[i].Y = (uint8_t*) buffer + offset;
+		offset += imageSizeY;
+		images[i].U = (uint8_t*) buffer + offset;
+		offset += imageSizeU;
+		images[i].V = (uint8_t*) buffer + offset;
+		offset += imageSizeV;
+	}
 
 	SCISetSegmentAvailable(imageSegment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
-
-	return image;
 }
 
 void init_remote_encoded_data_segment(struct c63_common* cm)

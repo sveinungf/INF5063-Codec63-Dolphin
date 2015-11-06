@@ -12,7 +12,7 @@ typedef enum {
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode);
 void cleanup_SISCI();
 
-struct segment_yuv init_image_segment(struct c63_common* cm);
+void init_image_segment(struct c63_common* cm, struct segment_yuv *images);
 void init_remote_encoded_data_segment(struct c63_common* cm);
 void init_local_encoded_data_segment();
 void cleanup_segments();

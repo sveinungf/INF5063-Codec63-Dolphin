@@ -6,7 +6,7 @@
 
 
 // SISCI variables
-static sci_desc_t sd;
+static sci_desc_t sds[2];
 
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
@@ -31,7 +31,11 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	sisci_assert(error);
 
 	// Initialize descriptors
-	SCIOpen(&sd, SCI_NO_FLAGS, &error);
+	SCIOpen(&sds[0], SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	// Initialize descriptors
+	SCIOpen(&sds[1], SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
@@ -39,12 +43,12 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 
 	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
 	interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED;
-	SCICreateDataInterrupt(sd, &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
+	SCICreateDataInterrupt(sds[0], &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
 	// Connect reader node to remote interrupt at processing machine
 	do {
-		SCIConnectInterrupt(sd, &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		SCIConnectInterrupt(sds[0], &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 }
 
@@ -64,14 +68,14 @@ void receive_width_and_height(uint32_t *width, uint32_t *height) {
 	printf("Done\n");
 }
 
-uint8_t *init_local_segment(uint32_t localSegmentSize) {
+uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	sci_error_t error;
 
 	// Set local segment id
-	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | SEGMENT_WRITER_ENCODED;
+	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | (SEGMENT_WRITER_ENCODED + segNum);
 
 	// Create the local segment for the processing machine to copy into
-	SCICreateSegment(sd, &localSegment, localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sds[segNum], &localSegment, localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Map the local segment
@@ -116,7 +120,10 @@ void cleanup_SISCI() {
 	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIClose(sd, SCI_NO_FLAGS, &error);
+	SCIClose(sds[0], SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIClose(sds[1], SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();

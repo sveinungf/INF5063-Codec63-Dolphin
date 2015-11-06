@@ -26,14 +26,14 @@ struct remote_segment_reader {
 void init_SISCI(unsigned int localAdapterNo, unsigned int encoderNodeId);
 void cleanup_SISCI();
 
-struct local_segment_reader init_image_segments(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV);
-void cleanup_segments(struct local_segment_reader local_segment);
+void init_image_segments(struct segment_yuv *images, unsigned int sizeY, unsigned int sizeU, unsigned int sizeV);
+void cleanup_segments();
 
 void send_width_and_height(uint32_t width, uint32_t height);
 
 void wait_for_encoder();
 
-void transfer_image_async(struct local_segment_reader local_segment, unsigned int offset);
+void transfer_image_async(int imgNum);
 void wait_for_image_transfer();
 
 void signal_encoder(encoder_signal signal);

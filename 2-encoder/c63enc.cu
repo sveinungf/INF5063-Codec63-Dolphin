@@ -365,7 +365,8 @@ int main(int argc, char **argv)
 
 	struct c63_common *cm = init_c63_enc(width, height);
 
-	struct segment_yuv image_gpu = init_image_segment(cm);
+	struct segment_yuv images_gpu[2];
+	init_image_segment(cm, images_gpu);
 	init_remote_encoded_data_segment(cm);
 	init_local_encoded_data_segment();
 
@@ -395,7 +396,7 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		c63_encode_image(cm, &image_gpu);
+		c63_encode_image(cm, &images_gpu[0]);
 
 		// Wait until the GPU has finished encoding
 		cudaStreamSynchronize(cm->cuda_data.streamY);

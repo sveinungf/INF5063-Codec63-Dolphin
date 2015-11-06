@@ -134,9 +134,8 @@ int main(int argc, char **argv) {
 
 	init_segment_sizes();
 
-	struct local_segment_reader imageSegment = init_image_segments(segmentSize_Y, segmentSize_U, segmentSize_V);
-
-	int offsets[2] = {0, imageSegment.segmentSize};
+	struct segment_yuv images[2];
+	init_image_segments(images, segmentSize_Y, segmentSize_U, segmentSize_V);
 
 	input_file = argv[optind];
 
@@ -157,7 +156,7 @@ int main(int argc, char **argv) {
 	int imgNum = 0;
 
 	while (1) {
-		int rc = read_yuv(infile, imageSegment.images[imgNum]);
+		int rc = read_yuv(infile, images[imgNum]);
 
 		if (!rc) {
 			// No more data
@@ -174,7 +173,7 @@ int main(int argc, char **argv) {
 		fflush(stdout);
 
 		// Start DMA transfer with interrupt to encoder handled by callback
-		transfer_image_async(imageSegment, offsets[imgNum]);
+		transfer_image_async(imgNum);
 
 		++numframes;
 
@@ -192,7 +191,7 @@ int main(int argc, char **argv) {
 
 	fclose(infile);
 
-	cleanup_segments(imageSegment);
+	cleanup_segments();
 	cleanup_SISCI();
 
 	return EXIT_SUCCESS;

@@ -6,10 +6,11 @@ static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static sci_desc_t sd;
 static sci_dma_queue_t dmaQueue;
-//static sci_local_segment_t localImageSegment;
-//static sci_map_t localImageMap;
+static sci_local_segment_t localImageSegment;
+static sci_map_t localImageMap;
 
-//static unsigned int imageSize;
+static unsigned int imageSize;
+static unsigned int offsets[2];
 
 // Encoder
 static unsigned int encoderNodeId;
@@ -77,34 +78,35 @@ void cleanup_SISCI()
 	SCITerminate();
 }
 
-struct local_segment_reader init_image_segments(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV)
+void init_image_segments(struct segment_yuv *images, unsigned int sizeY, unsigned int sizeU, unsigned int sizeV)
 {
 	sci_error_t error;
 
-	struct local_segment_reader local_segment;
-	local_segment.sd = sd;
-	local_segment.segmentSize = sizeY + sizeU + sizeV;
+	imageSize = sizeY + sizeU + sizeV;
 
 	//struct segment_yuv image;
 	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 167;
-	SCICreateSegment(local_segment.sd, &local_segment.segment, localSegmentId, 2*(local_segment.segmentSize), SCI_NO_CALLBACK, NULL,
+	SCICreateSegment(sd, &localImageSegment, localSegmentId, 2*(imageSize), SCI_NO_CALLBACK, NULL,
 			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIPrepareSegment(local_segment.segment, localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
+	SCIPrepareSegment(localImageSegment, localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
 	sisci_assert(error);
 
-	uint8_t* buffer = SCIMapLocalSegment(local_segment.segment, &(local_segment.map), 0, 2*(local_segment.segmentSize), NULL,
+	uint8_t* buffer = SCIMapLocalSegment(localImageSegment, &localImageMap, 0, 2*(imageSize), NULL,
 			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	local_segment.images[0].Y = buffer;
-	local_segment.images[0].U = local_segment.images[0].Y + sizeY;
-	local_segment.images[0].V = local_segment.images[0].U + sizeU;
+	offsets[0] = 0;
+	offsets[1] = imageSize;
 
-	local_segment.images[1].Y = buffer + local_segment.segmentSize;
-	local_segment.images[1].U = local_segment.images[1].Y + sizeY;
-	local_segment.images[1].V = local_segment.images[1].U + sizeU;
+	images[0].Y = buffer + offsets[0];
+	images[0].U = images[0].Y + sizeY;
+	images[0].V = images[0].U + sizeU;
+
+	images[1].Y = buffer + offsets[1];
+	images[1].U = images[1].Y + sizeY;
+	images[1].V = images[1].U + sizeU;
 
 	unsigned int remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8)
 			| SEGMENT_ENCODER_IMAGE;
@@ -114,21 +116,19 @@ struct local_segment_reader init_image_segments(unsigned int sizeY, unsigned int
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
-
-	return local_segment;
 }
 
-void cleanup_segments(struct local_segment_reader local_segment)
+void cleanup_segments()
 {
 	sci_error_t error;
 
 	SCIDisconnectSegment(remoteImageSegment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIUnmapSegment(local_segment.map, SCI_NO_FLAGS, &error);
+	SCIUnmapSegment(localImageMap, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveSegment(local_segment.segment, SCI_NO_FLAGS, &error);
+	SCIRemoveSegment(localImageSegment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 }
 
@@ -162,11 +162,11 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 	}
 }
 
-void transfer_image_async(struct local_segment_reader local_segment, unsigned int offset)
+void transfer_image_async(int imgNum)
 {
 	sci_error_t error;
 
-	SCIStartDmaTransfer(dmaQueue, local_segment.segment, remoteImageSegment, offset, local_segment.segmentSize, 0, dma_callback, NULL, SCI_FLAG_USE_CALLBACK, &error);
+	SCIStartDmaTransfer(dmaQueue, localImageSegment, remoteImageSegment, offsets[imgNum], imageSize, 0, dma_callback, NULL, SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
 }
 

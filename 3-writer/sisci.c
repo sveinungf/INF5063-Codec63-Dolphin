@@ -12,8 +12,8 @@ static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static unsigned int encoderNodeId;
 
-static sci_local_segment_t localSegment;
-static sci_map_t localMap;
+static sci_local_segment_t localSegments[2];
+static sci_map_t localMaps[2];
 
 static sci_local_data_interrupt_t interruptFromEncoder;
 static sci_remote_interrupt_t interruptToEncoder;
@@ -31,12 +31,11 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	sisci_assert(error);
 
 	// Initialize descriptors
-	SCIOpen(&sds[0], SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-
-	// Initialize descriptors
-	SCIOpen(&sds[1], SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	int i;
+	for (i = 0; i < 2; ++i) {
+		SCIOpen(&sds[i], SCI_NO_FLAGS, &error);
+		sisci_assert(error);
+	}
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
@@ -75,20 +74,20 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | (SEGMENT_WRITER_ENCODED + segNum);
 
 	// Create the local segment for the processing machine to copy into
-	SCICreateSegment(sds[segNum], &localSegment, localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(sds[segNum], &localSegments[segNum], localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Map the local segment
 	int offset = 0;
-	uint8_t *local_buffer = SCIMapLocalSegment(localSegment , &localMap, offset, localSegmentSize, NULL, SCI_NO_FLAGS, &error);
+	uint8_t *local_buffer = SCIMapLocalSegment(localSegments[segNum] , &localMaps[segNum], offset, localSegmentSize, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Make segment accessible from the network adapter
-	SCIPrepareSegment(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCIPrepareSegment(localSegments[segNum], localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Make segment accessible from other nodes
-	SCISetSegmentAvailable(localSegment, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCISetSegmentAvailable(localSegments[segNum], localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	return local_buffer;
@@ -114,17 +113,17 @@ void cleanup_SISCI() {
 	SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIUnmapSegment(localMap, SCI_NO_FLAGS, &error);
-	sisci_check(error);
+	int i;
+	for (i = 0; i < 2; ++i) {
+		SCIUnmapSegment(localMaps[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
 
-	SCIRemoveSegment(localSegment, SCI_NO_FLAGS, &error);
-	sisci_check(error);
+		SCIRemoveSegment(localSegments[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
 
-	SCIClose(sds[0], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIClose(sds[1], SCI_NO_FLAGS, &error);
-	sisci_check(error);
+		SCIClose(sds[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+	}
 
 	SCITerminate();
 }

@@ -365,13 +365,18 @@ int main(int argc, char **argv)
 
 	struct c63_common *cm = init_c63_enc(width, height);
 
+	set_sizes_offsets(cm);
+
 	struct segment_yuv images_gpu[2];
 	init_image_segment(cm, images_gpu);
-	init_remote_encoded_data_segment(cm);
+	init_remote_encoded_data_segment(0);
+	init_remote_encoded_data_segment(1);
 	init_local_encoded_data_segment();
 
 	//yuv_t* image_gpu = create_image_gpu(cm);
+	int segNum = 0;
 
+	int transferred = 0;
 	while (1)
 	{
 		// The reader sends an interrupt when it has transferred the next frame
@@ -406,13 +411,15 @@ int main(int argc, char **argv)
 		printf(", encoded\n");
 		fflush(stdout);
 
-		if (numframes != 0) {
+		if (numframes != 0 && transferred == 2) {
 			// The writer sends an interrupt when it is ready for the next frame
 			wait_for_writer();
+			--transferred;
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
-		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals);
+		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals, segNum);
+		++transferred;
 
 		// Reader can transfer next frame
 		signal_reader();
@@ -424,6 +431,8 @@ int main(int argc, char **argv)
 		++cm->frames_since_keyframe;
 
 		++numframes;
+
+		segNum ^= 1;
 	}
 
 	//destroy_image_gpu(image_gpu);

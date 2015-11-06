@@ -15,6 +15,7 @@
 
 #include "sisci.h"
 
+struct c63_common *cms[2];
 static volatile uint8_t *local_buffers[2];
 static uint32_t keyframe_offset;
 
@@ -170,20 +171,21 @@ int main(int argc, char **argv)
 
   receive_width_and_height(&width, &height);
 
-  struct c63_common *cm1 = init_c63_enc();
-  //struct c63_common *cm2 = init_c63_enc();
+  cms[0] = init_c63_enc();
+  cms[1] = init_c63_enc();
 
-  cm1->e_ctx.fp = outfile;
+  cms[0]->e_ctx.fp = outfile;
+  cms[1]->e_ctx.fp = cms[0]->e_ctx.fp;
 
-  uint32_t localSegmentSize = sizeof(int) + (cm1->mb_rows * cm1->mb_cols + (cm1->mb_rows/2)*(cm1->mb_cols/2) +
-		  (cm1->mb_rows/2)*(cm1->mb_cols/2))*sizeof(struct macroblock) +
-		  (cm1->ypw*cm1->yph + cm1->upw*cm1->uph + cm1->vpw*cm1->vph) * sizeof(int16_t);
+  uint32_t localSegmentSize = sizeof(int) + (cms[0]->mb_rows * cms[0]->mb_cols + (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2) +
+		  (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2))*sizeof(struct macroblock) +
+		  (cms[0]->ypw*cms[0]->yph + cms[0]->upw*cms[0]->uph + cms[0]->vpw*cms[0]->vph) * sizeof(int16_t);
 
-  uint32_t totalSegmentSize = localSegmentSize;
+  local_buffers[0] = init_local_segment(localSegmentSize, 0);
+  local_buffers[1] = init_local_segment(localSegmentSize, 1);
 
-  local_buffers[0] = init_local_segment(totalSegmentSize, 0);
-
-  set_offsets_and_pointers(cm1, 0);
+  set_offsets_and_pointers(cms[0], 0);
+  set_offsets_and_pointers(cms[1], 1);
 
   /* Encode input frames */
   int numframes = 0;
@@ -195,7 +197,7 @@ int main(int argc, char **argv)
   pthread_t child;
   pthread_create(&child, NULL, flush, NULL);
 
-  int imgNum = 0;
+  int segNum = 0;
 
   while (1)
   {
@@ -215,9 +217,9 @@ int main(int argc, char **argv)
 		  break;
 	  }
 
-	  cm1->curframe->keyframe = ((int*) local_buffers[imgNum])[keyframe_offset];
+	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
-	  write_frame(cm1);
+	  write_frame(cms[segNum]);
 
 	  // Flush
 	  pthread_cond_signal(&cond);
@@ -227,6 +229,8 @@ int main(int argc, char **argv)
 
 	  // Signal encoder that writer is ready for a new frame
 	  signal_encoder();
+
+	  segNum ^= 1;
   }
 
   pthread_mutex_lock(&mut);
@@ -236,15 +240,12 @@ int main(int argc, char **argv)
 
   cleanup_SISCI();
 
-  free(cm1->curframe->residuals);
-  free(cm1->curframe);
-  free(cm1);
-
-  /*
-  free(cm2->curframe->residuals);
-  free(cm2->curframe);
-  free(cm2);
-  */
+  int i;
+  for (i = 0; i < 2; ++i) {
+	  free(cms[i]->curframe->residuals);
+	  free(cms[i]->curframe);
+	  free(cms[i]);
+  }
 
   fclose(outfile);
 

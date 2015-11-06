@@ -37,7 +37,7 @@ static inline void put_bytes(FILE *fp, const void* data, unsigned int len)
 
 /**
  * Adds a bit to the bitBuffer. A call to bit_flush() is needed
- * in order to write any remainding bits in the buffer before
+ * in order to write any remaining bits in the buffer before
  * writing using another function.
  */
 static inline void put_bits(struct entropy_ctx *c, uint16_t bits, uint8_t n)

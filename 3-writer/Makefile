@@ -1,4 +1,5 @@
 CC = gcc
+CXX = g++
 
 DEBUG ?= 0
 
@@ -31,8 +32,11 @@ all: c63write
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 	
+%.o: %.cpp
+	$(CXX) $(CCFLAGS) -c $< -o $@
+	
 c63write: c63write.o tables.o c63_write.o sisci.o
-	$(CC) $^ $(LDFLAGS) -o $@
+	$(CXX) $^ $(LDFLAGS) -o $@
 	
 clean:
 	rm -f *.o c63write $(C63_FILE)

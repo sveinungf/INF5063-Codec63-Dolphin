@@ -3,17 +3,20 @@
 #include <getopt.h>
 #include <limits.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <pthread.h>
+
 #include "c63.h"
 #include "c63_write.h"
-#include "tables.h"
 
+extern "C" {
 #include "sisci.h"
+#include "tables.h"
+}
 
 static volatile uint8_t *local_buffer;
 static uint32_t keyframe_offset;
@@ -39,7 +42,7 @@ extern char *optarg;
 struct c63_common* init_c63_enc()
 {
   /* calloc() sets allocated memory to zero */
-  struct c63_common *cm = calloc(1, sizeof(struct c63_common));
+  struct c63_common *cm = (struct c63_common*) calloc(1, sizeof(struct c63_common));
 
   cm->width = width;
   cm->height = height;
@@ -70,8 +73,8 @@ struct c63_common* init_c63_enc()
     cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
   }
 
-  cm->curframe = malloc(sizeof(struct frame));
-  cm->curframe->residuals = malloc(sizeof(dct_t));
+  cm->curframe = (struct frame*) malloc(sizeof(struct frame));
+  cm->curframe->residuals = (dct_t*) malloc(sizeof(dct_t));
   return cm;
 }
 

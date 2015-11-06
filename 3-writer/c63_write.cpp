@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
 
 #include "c63.h"
 #include "c63_write.h"
@@ -13,25 +14,19 @@
 
 int frequencies[2][12];
 
-static inline void put_byte(FILE *fp, int byte)
-{
-	int status = fputc(byte, fp);
+static std::vector<uint8_t> byte_vector;
 
-	if (status == EOF)
-	{
-		fprintf(stderr, "Error writing byte\n");
-		exit(EXIT_FAILURE);
-	}
+static inline void put_byte(int byte)
+{
+	byte_vector.push_back(byte);
 }
 
-static inline void put_bytes(FILE *fp, const void* data, unsigned int len)
+static inline void put_bytes(const void* data, unsigned int len)
 {
-	size_t n = fwrite(data, 1, (size_t) len, fp);
-
-	if (n != (size_t) len)
+	const uint8_t* bytes = (const uint8_t*) data;
+	for (unsigned int i = 0; i < len; ++i)
 	{
-		fprintf(stderr, "Error writing bytes\n");
-		exit(EXIT_FAILURE);
+		byte_vector.push_back(bytes[i]);
 	}
 }
 
@@ -57,11 +52,11 @@ static inline void put_bits(struct entropy_ctx *c, uint16_t bits, uint8_t n)
 	{
 		uint8_t b = (uint8_t) (c->bit_buffer >> (c->bit_buffer_width - 8));
 
-		put_byte(c->fp, b);
+		put_byte(b);
 
 		if (b == 0xff)
 		{
-			put_byte(c->fp, 0);
+			put_byte(0);
 		}
 
 		c->bit_buffer_width -= 8;
@@ -76,11 +71,11 @@ static inline void flush_bits(struct entropy_ctx *c)
 	if (c->bit_buffer > 0)
 	{
 		uint8_t b = c->bit_buffer << (8 - c->bit_buffer_width);
-		put_byte(c->fp, b);
+		put_byte(b);
 
 		if (b == 0xff)
 		{
-			put_byte(c->fp, 0);
+			put_byte(0);
 		}
 	}
 
@@ -91,8 +86,8 @@ static inline void flush_bits(struct entropy_ctx *c)
 /* Start of Image (SOI) marker, contains no payload. */
 static void write_SOI(struct c63_common *cm)
 {
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_SOI_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_SOI_MARKER);
 }
 
 /* Define Quatization Tables (DQT) marker, contains the tables as payload. */
@@ -100,24 +95,24 @@ static void write_DQT(struct c63_common *cm)
 {
 	int16_t size = 2 + (3 * 64 + 1);
 
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_DQT_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_DQT_MARKER);
 
 	/* Length of segment */
-	put_byte(cm->e_ctx.fp, size >> 8);
-	put_byte(cm->e_ctx.fp, size & 0xff);
+	put_byte(size >> 8);
+	put_byte(size & 0xff);
 
 	/* Quatization table for Y component */
-	put_byte(cm->e_ctx.fp, Y_COMPONENT);
-	put_bytes(cm->e_ctx.fp, cm->quanttbl[Y_COMPONENT], 64);
+	put_byte(Y_COMPONENT);
+	put_bytes(cm->quanttbl[Y_COMPONENT], 64);
 
 	/* Quantization table for U component */
-	put_byte(cm->e_ctx.fp, U_COMPONENT);
-	put_bytes(cm->e_ctx.fp, cm->quanttbl[U_COMPONENT], 64);
+	put_byte(U_COMPONENT);
+	put_bytes(cm->quanttbl[U_COMPONENT], 64);
 
 	/* Quantization table for V component */
-	put_byte(cm->e_ctx.fp, V_COMPONENT);
-	put_bytes(cm->e_ctx.fp, cm->quanttbl[V_COMPONENT], 64);
+	put_byte(V_COMPONENT);
+	put_bytes(cm->quanttbl[V_COMPONENT], 64);
 }
 
 /* Start of Frame (SOF) marker with baseline DCT (aka SOF0). */
@@ -125,38 +120,38 @@ static void write_SOF0(struct c63_common *cm)
 {
 	int16_t size = 8 + 3 * COLOR_COMPONENTS + 1;
 
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_SOF_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_SOF_MARKER);
 
 	/* Lenght of segment */
-	put_byte(cm->e_ctx.fp, size >> 8);
-	put_byte(cm->e_ctx.fp, size & 0xff);
+	put_byte(size >> 8);
+	put_byte(size & 0xff);
 
 	/* Precision */
-	put_byte(cm->e_ctx.fp, 8);
+	put_byte(8);
 
 	/* Width and height */
-	put_byte(cm->e_ctx.fp, cm->height >> 8);
-	put_byte(cm->e_ctx.fp, cm->height & 0xff);
-	put_byte(cm->e_ctx.fp, cm->width >> 8);
-	put_byte(cm->e_ctx.fp, cm->width & 0xff);
+	put_byte(cm->height >> 8);
+	put_byte(cm->height & 0xff);
+	put_byte(cm->width >> 8);
+	put_byte(cm->width & 0xff);
 
-	put_byte(cm->e_ctx.fp, COLOR_COMPONENTS);
+	put_byte(COLOR_COMPONENTS);
 
-	put_byte(cm->e_ctx.fp, 1); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x22); /* hor | ver sampling factor */
-	put_byte(cm->e_ctx.fp, 0); /* Quant. tbl. id */
+	put_byte(1); /* Component id */
+	put_byte(0x22); /* hor | ver sampling factor */
+	put_byte(0); /* Quant. tbl. id */
 
-	put_byte(cm->e_ctx.fp, 2); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x11); /* hor | ver sampling factor */
-	put_byte(cm->e_ctx.fp, 1); /* Quant. tbl. id */
+	put_byte(2); /* Component id */
+	put_byte(0x11); /* hor | ver sampling factor */
+	put_byte(1); /* Quant. tbl. id */
 
-	put_byte(cm->e_ctx.fp, 3); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x11); /* hor | ver sampling factor */
-	put_byte(cm->e_ctx.fp, 2); /* Quant. tbl. id */
+	put_byte(3); /* Component id */
+	put_byte(0x11); /* hor | ver sampling factor */
+	put_byte(2); /* Quant. tbl. id */
 
 	/* Is this a keyframe or not? */
-	put_byte(cm->e_ctx.fp, cm->curframe->keyframe);
+	put_byte(cm->curframe->keyframe);
 }
 
 static void write_DHT_HTS(struct c63_common *cm, uint8_t id, uint8_t *numlength, uint8_t* data)
@@ -169,9 +164,9 @@ static void write_DHT_HTS(struct c63_common *cm, uint8_t id, uint8_t *numlength,
 		n += numlength[i];
 	}
 
-	put_byte(cm->e_ctx.fp, id);
-	put_bytes(cm->e_ctx.fp, numlength, 16);
-	put_bytes(cm->e_ctx.fp, data, n);
+	put_byte(id);
+	put_bytes(numlength, 16);
+	put_bytes(data, n);
 }
 
 /* Define Huffman Table (DHT) marker, the payload is the Huffman table
@@ -180,12 +175,12 @@ static void write_DHT(struct c63_common *cm)
 {
 	int16_t size = 0x01A2; /* 2 + n*(17+mi); */
 
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_DHT_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_DHT_MARKER);
 
 	/* Length of segment */
-	put_byte(cm->e_ctx.fp, size >> 8);
-	put_byte(cm->e_ctx.fp, size & 0xff);
+	put_byte(size >> 8);
+	put_byte(size & 0xff);
 
 	/* Write the four huffman table specifications */
 	/* DC table 0 */
@@ -204,32 +199,32 @@ static void write_SOS(struct c63_common *cm)
 {
 	int16_t size = 6 + 2 * COLOR_COMPONENTS;
 
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_SOS_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_SOS_MARKER);
 
 	/* Length of the segment */
-	put_byte(cm->e_ctx.fp, size >> 8);
-	put_byte(cm->e_ctx.fp, size & 0xff);
+	put_byte(size >> 8);
+	put_byte(size & 0xff);
 
-	put_byte(cm->e_ctx.fp, COLOR_COMPONENTS);
+	put_byte(COLOR_COMPONENTS);
 
-	put_byte(cm->e_ctx.fp, 1); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x00); /* DC | AC huff tbl */
-	put_byte(cm->e_ctx.fp, 2); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x11); /* DC | AC huff tbl */
-	put_byte(cm->e_ctx.fp, 3); /* Component id */
-	put_byte(cm->e_ctx.fp, 0x11); /* DC | AC huff tbl */
+	put_byte(1); /* Component id */
+	put_byte(0x00); /* DC | AC huff tbl */
+	put_byte(2); /* Component id */
+	put_byte(0x11); /* DC | AC huff tbl */
+	put_byte(3); /* Component id */
+	put_byte(0x11); /* DC | AC huff tbl */
 
-	put_byte(cm->e_ctx.fp, 0); /* ss, first AC */
-	put_byte(cm->e_ctx.fp, 63); /* se, last AC */
-	put_byte(cm->e_ctx.fp, 0); /* ah | al */
+	put_byte(0); /* ss, first AC */
+	put_byte(63); /* se, last AC */
+	put_byte(0); /* ah | al */
 }
 
 /* End of Image (EOI) marker, contains no payload. */
 static void write_EOI(struct c63_common *cm)
 {
-	put_byte(cm->e_ctx.fp, JPEG_DEF_MARKER);
-	put_byte(cm->e_ctx.fp, JPEG_EOI_MARKER);
+	put_byte(JPEG_DEF_MARKER);
+	put_byte(JPEG_EOI_MARKER);
 }
 
 static inline uint8_t bit_width(int16_t i)
@@ -450,4 +445,17 @@ void write_frame(struct c63_common *cm)
 
 	/* End Of Image */
 	write_EOI(cm);
+
+	FILE* fp = cm->e_ctx.fp;
+
+	size_t n = fwrite(&byte_vector[0], 1, byte_vector.size(), fp);
+
+	if (n != byte_vector.size())
+	{
+		fprintf(stderr, "Error writing bytes\n");
+		exit(EXIT_FAILURE);
+	}
+
+	std::vector<uint8_t> empty;
+	std::swap(byte_vector, empty);
 }

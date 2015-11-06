@@ -14,7 +14,7 @@ void cleanup_SISCI();
 
 void set_sizes_offsets(struct c63_common *cm);
 
-void init_image_segment(struct c63_common* cm, struct segment_yuv *images);
+struct segment_yuv init_image_segment(struct c63_common* cm, int segNum);
 void init_remote_encoded_data_segment(int segNum);
 void init_local_encoded_data_segment();
 void cleanup_segments();

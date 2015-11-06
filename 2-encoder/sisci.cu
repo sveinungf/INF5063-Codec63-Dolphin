@@ -9,25 +9,23 @@
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
-static sci_desc_t sd;
-static sci_desc_t vds[2];
-static void *cudaBuffer;
+static sci_desc_t reader_sds[2];
+static sci_desc_t writer_sds[2];
+static void *cudaBuffers[2];
 
 // Reader
 static unsigned int readerNodeId;
 static sci_local_data_interrupt_t interruptFromReader;
 static sci_remote_interrupt_t interruptToReader;
-static sci_local_segment_t imageSegment;
-static sci_map_t imageMap;
+static sci_local_segment_t imageSegments[2];
+static sci_map_t imageMaps[2];
 
 // Writer
+static uint32_t segmentSizeWriter;
 static unsigned int writerNodeId;
 static sci_local_interrupt_t interruptFromWriter;
 static sci_remote_data_interrupt_t interruptToWriter;
 static sci_remote_segment_t encodedDataSegmentsWriter[2];
-
-static uint32_t segmentSizeWriter;
-
 static sci_local_segment_t encodedDataSegmentLocal;
 static sci_map_t encodedDataMapLocal;
 static sci_dma_queue_t dmaQueue;
@@ -69,31 +67,31 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	SCIInitialize(SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIOpen(&sd, SCI_NO_FLAGS, &error);
+	SCIOpen(&reader_sds[0], SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIOpen(&vds[0], SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-
-	SCIOpen(&vds[1], SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	int i;
+	for (i = 0; i < 2; ++i) {
+		SCIOpen(&writer_sds[i], SCI_NO_FLAGS, &error);
+		sisci_assert(error);
+	}
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	unsigned int maxEntries = 1;
-	SCICreateDMAQueue(vds[0], &dmaQueue, localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
+	SCICreateDMAQueue(writer_sds[0], &dmaQueue, localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	// Interrupts from the reader
 	unsigned int interruptFromReaderNo = MORE_DATA_TRANSFERRED;
-	SCICreateDataInterrupt(sd, &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
+	SCICreateDataInterrupt(reader_sds[0], &interruptFromReader, localAdapterNo, &interruptFromReaderNo, NULL,
 			NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
 	// Interrupts from the writer
 	unsigned int interruptFromWriterNo = DATA_WRITTEN;
-	SCICreateInterrupt(vds[0], &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
+	SCICreateInterrupt(writer_sds[0], &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
 			NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
@@ -102,7 +100,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	fflush(stdout);
 	do
 	{
-		SCIConnectInterrupt(sd, &interruptToReader, readerNodeId, localAdapterNo,
+		SCIConnectInterrupt(reader_sds[0], &interruptToReader, readerNodeId, localAdapterNo,
 				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
@@ -113,7 +111,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	fflush(stdout);
 	do
 	{
-		SCIConnectDataInterrupt(vds[0], &interruptToWriter, writerNodeId, localAdapterNo,
+		SCIConnectDataInterrupt(writer_sds[0], &interruptToWriter, writerNodeId, localAdapterNo,
 				ENCODED_FRAME_TRANSFERRED, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	}
 	while (error != SCI_ERR_OK);
@@ -140,9 +138,9 @@ void cleanup_SISCI()
 
 	SCIRemoveDMAQueue(dmaQueue, SCI_NO_FLAGS, &error);
 
-	SCIClose(sd, SCI_NO_FLAGS, &error);
+	SCIClose(reader_sds[0], SCI_NO_FLAGS, &error);
 	sisci_check(error);
-	SCIClose(vds[0], SCI_NO_FLAGS, &error);
+	SCIClose(writer_sds[0], SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();
@@ -168,54 +166,51 @@ void set_sizes_offsets(struct c63_common *cm) {
 
 }
 
-void init_image_segment(struct c63_common* cm, struct segment_yuv *images)
+struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 {
-	//struct segment_yuv image;
-	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | SEGMENT_ENCODER_IMAGE;
+	struct segment_yuv image;
+	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | (SEGMENT_ENCODER_IMAGE + segNum);
 
 	unsigned int imageSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
 	unsigned int imageSizeU = cm->upw * cm->uph * sizeof(uint8_t);
 	unsigned int imageSizeV = cm->vpw * cm->vph * sizeof(uint8_t);
 	unsigned int imageSize = imageSizeY + imageSizeU + imageSizeV;
-	unsigned int segmentSize = 2*(imageSize);
+	unsigned int segmentSize = imageSize;
 
 	if(segmentSize < MIN_SEG_SZ) {
 		segmentSize = MIN_SEG_SZ;
 	}
 
 	sci_error_t error;
-
-	//SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
-	SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
+	SCICreateSegment(reader_sds[0], &imageSegments[0], localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
 	sisci_assert(error);
 
-	cudaMalloc(&cudaBuffer, segmentSize);
+	cudaMalloc(&cudaBuffers[0], segmentSize);
 
 	struct cudaPointerAttributes attributes;
-	cudaPointerGetAttributes(&attributes, cudaBuffer);
+	cudaPointerGetAttributes(&attributes, cudaBuffers[0]);
 
-	SCIAttachPhysicalMemory(0, attributes.devicePointer, 0, segmentSize, imageSegment, SCI_FLAG_CUDA_BUFFER, &error);
+	SCIAttachPhysicalMemory(0, attributes.devicePointer, 0, segmentSize, imageSegments[0], SCI_FLAG_CUDA_BUFFER, &error);
 	sisci_assert(error);
 
-	SCIPrepareSegment(imageSegment, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCIPrepareSegment(imageSegments[0], localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	void* buffer = SCIMapLocalSegment(imageSegment, &imageMap, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	void* buffer = SCIMapLocalSegment(imageSegments[0], &imageMaps[0], 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	unsigned int offset = 0;
-	int i;
-	for (i = 0; i < 2; ++i) {
-		images[i].Y = (uint8_t*) buffer + offset;
-		offset += imageSizeY;
-		images[i].U = (uint8_t*) buffer + offset;
-		offset += imageSizeU;
-		images[i].V = (uint8_t*) buffer + offset;
-		offset += imageSizeV;
-	}
+	image.Y = (uint8_t*) buffer + offset;
+	offset += imageSizeY;
+	image.U = (uint8_t*) buffer + offset;
+	offset += imageSizeU;
+	image.V = (uint8_t*) buffer + offset;
+	offset += imageSizeV;
 
-	SCISetSegmentAvailable(imageSegment, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCISetSegmentAvailable(imageSegments[0], localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
+
+	return image;
 }
 
 void init_remote_encoded_data_segment(int segNum)
@@ -226,7 +221,7 @@ void init_remote_encoded_data_segment(int segNum)
 
 	// Connect to remote segment on writer
 	do {
-		SCIConnectSegment(vds[segNum], &encodedDataSegmentsWriter[segNum], writerNodeId, remoteSegmentId, localAdapterNo,
+		SCIConnectSegment(writer_sds[segNum], &encodedDataSegmentsWriter[segNum], writerNodeId, remoteSegmentId, localAdapterNo,
 				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
 
@@ -239,7 +234,7 @@ void init_local_encoded_data_segment() {
 	uint32_t localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | 37;
 
 	sci_error_t error;
-	SCICreateSegment(vds[0], &encodedDataSegmentLocal, localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+	SCICreateSegment(writer_sds[0], &encodedDataSegmentLocal, localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	SCIPrepareSegment(encodedDataSegmentLocal, localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
@@ -283,12 +278,15 @@ static void cleanup_remote_segment(sci_remote_segment_t* segment)
 
 void cleanup_segments()
 {
-	cleanup_local_segment(&imageSegment, &imageMap);
+	cleanup_local_segment(&imageSegments[0], &imageMaps[0]);
 	cleanup_local_segment(&encodedDataSegmentLocal, &encodedDataMapLocal);
-	cleanup_remote_segment(&encodedDataSegmentsWriter[0]);
-	cleanup_remote_segment(&encodedDataSegmentsWriter[1]);
 
-	cudaFree(cudaBuffer);
+	int i;
+	for (i = 0; i < 2; ++i) {
+		cleanup_remote_segment(&encodedDataSegmentsWriter[i]);
+	}
+
+	cudaFree(cudaBuffers[0]);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)

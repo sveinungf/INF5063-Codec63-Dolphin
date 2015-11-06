@@ -368,7 +368,7 @@ int main(int argc, char **argv)
 	set_sizes_offsets(cm);
 
 	struct segment_yuv images_gpu[2];
-	init_image_segment(cm, images_gpu);
+	images_gpu[0] = init_image_segment(cm, 0);
 	init_remote_encoded_data_segment(0);
 	init_remote_encoded_data_segment(1);
 	init_local_encoded_data_segment();

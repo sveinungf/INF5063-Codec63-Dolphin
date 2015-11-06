@@ -18,6 +18,8 @@ extern "C" {
 #include "tables.h"
 }
 
+using namespace std;
+
 static volatile uint8_t *local_buffer;
 static uint32_t keyframe_offset;
 
@@ -221,7 +223,8 @@ int main(int argc, char **argv)
 
 		cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
 
-		write_frame(cm);
+		vector<uint8_t> byte_vector = write_frame_to_buffer(cm);
+		write_buffer_to_file(byte_vector, cm->e_ctx.fp);
 
 		// Flush
 		pthread_cond_signal(&cond);

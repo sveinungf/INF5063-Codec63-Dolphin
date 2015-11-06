@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vector>
 
 #include "c63.h"
 #include "c63_write.h"
@@ -430,7 +429,7 @@ static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_
 	flush_bits(&cm->e_ctx, byte_vector);
 }
 
-void write_frame(struct c63_common *cm)
+vector<uint8_t> write_frame_to_buffer(struct c63_common *cm)
 {
 	vector<uint8_t> byte_vector;
 
@@ -452,9 +451,12 @@ void write_frame(struct c63_common *cm)
 	/* End Of Image */
 	write_EOI(cm, byte_vector);
 
-	FILE* fp = cm->e_ctx.fp;
+	return byte_vector;
+}
 
-	size_t n = fwrite(&byte_vector[0], 1, byte_vector.size(), fp);
+void write_buffer_to_file(const vector<uint8_t>& byte_vector, FILE* file)
+{
+	size_t n = fwrite(&byte_vector[0], sizeof(uint8_t), byte_vector.size(), file);
 
 	if (n != byte_vector.size())
 	{

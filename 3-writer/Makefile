@@ -32,7 +32,7 @@ all: c63write
 	$(CC) $(CCFLAGS) -c $< -o $@
 	
 c63write: c63write.o tables.o c63_write.o sisci.o
-	$(CC) $^ $(LDFLAGS) -o $@
+	$(CC) $^ $(LDFLAGS) $(CCFLAGS) -o $@
 	
 clean:
 	rm -f *.o c63write $(C63_FILE)

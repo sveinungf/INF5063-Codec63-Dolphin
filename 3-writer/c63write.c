@@ -170,20 +170,26 @@ int main(int argc, char **argv)
 
   receive_width_and_height(&width, &height);
 
-  struct c63_common *cm = init_c63_enc();
-  cm->e_ctx.fp = outfile;
+  struct c63_common *cm1 = init_c63_enc();
+  //struct c63_common *cm2 = init_c63_enc();
 
-  local_buffer = init_local_segment(sizeof(int) + (cm->mb_rows * cm->mb_cols + (cm->mb_rows/2)*(cm->mb_cols/2) +
-		  (cm->mb_rows/2)*(cm->mb_cols/2))*sizeof(struct macroblock) +
-		  (cm->ypw*cm->yph + cm->upw*cm->uph + cm->vpw*cm->vph) * sizeof(int16_t));
+  cm1->e_ctx.fp = outfile;
 
-  set_offsets_and_pointers(cm);
+  uint32_t localSegmentSize = sizeof(int) + (cm1->mb_rows * cm1->mb_cols + (cm1->mb_rows/2)*(cm1->mb_cols/2) +
+		  (cm1->mb_rows/2)*(cm1->mb_cols/2))*sizeof(struct macroblock) +
+		  (cm1->ypw*cm1->yph + cm1->upw*cm1->uph + cm1->vpw*cm1->vph) * sizeof(int16_t);
+
+  uint32_t totalSegmentSize = localSegmentSize*2;
+
+  local_buffer = init_local_segment(totalSegmentSize);
+
+  set_offsets_and_pointers(cm1);
 
   /* Encode input frames */
   int numframes = 0;
 
   uint8_t done = 0;
-  unsigned int length = 1;
+  unsigned int length = sizeof(uint8_t);
 
   fd = fileno(outfile);
   pthread_t child;
@@ -191,35 +197,34 @@ int main(int argc, char **argv)
 
   while (1)
   {
-	 // if(child_pid != 0) {
-		  printf("Frame %d:", numframes);
+	  printf("Frame %d:", numframes);
+	  fflush(stdout);
+
+	  wait_for_encoder(&done, &length);
+
+	  if (!done)
+	  {
+		  printf(" Received");
 		  fflush(stdout);
+	  }
+	  else
+	  {
+		  printf("\rNo more frames from encoder\n");
+		  break;
+	  }
 
-		  wait_for_encoder(&done, &length);
+	  cm1->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
 
-		  if (!done)
-		  {
-			  printf(" Received");
-			  fflush(stdout);
-		  }
-		  else
-		  {
-			  printf("\rNo more frames from encoder\n");
-			  break;
-		  }
+	  write_frame(cm1);
 
-		  cm->curframe->keyframe = ((int*) local_buffer)[keyframe_offset];
+	  // Flush
+	  pthread_cond_signal(&cond);
 
-		  write_frame(cm);
+	  printf(", written\n");
+	  ++numframes;
 
-		  // Flush
-		  pthread_cond_signal(&cond);
-
-		  printf(", written\n");
-		  ++numframes;
-
-		  // Signal encoder that writer is ready for a new frame
-		  signal_encoder();
+	  // Signal encoder that writer is ready for a new frame
+	  signal_encoder();
   }
 
   pthread_mutex_lock(&mut);
@@ -229,9 +234,16 @@ int main(int argc, char **argv)
 
   cleanup_SISCI();
 
-  free(cm->curframe->residuals);
-  free(cm->curframe);
-  free(cm);
+  free(cm1->curframe->residuals);
+  free(cm1->curframe);
+  free(cm1);
+
+  /*
+  free(cm2->curframe->residuals);
+  free(cm2->curframe);
+  free(cm2);
+  */
+
   fclose(outfile);
 
   return EXIT_SUCCESS;

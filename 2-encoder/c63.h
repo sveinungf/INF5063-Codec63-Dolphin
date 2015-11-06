@@ -85,6 +85,10 @@ struct frame
   yuv_t *recons_gpu;		// Reconstructed image
   yuv_t *predicted_gpu;		// Predicted frame from intra-prediction
 
+  yuv_t *orig_simd;
+  yuv_t *recons_simd;
+  yuv_t *predicted_simd;
+
   dct_t *residuals;   // Difference between original image and predicted frame
   dct_t *residuals_gpu;
 

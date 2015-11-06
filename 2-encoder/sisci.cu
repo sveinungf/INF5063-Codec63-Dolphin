@@ -11,6 +11,7 @@ static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static sci_desc_t sd;
 static sci_desc_t vd;
+static void *cudaBuffer;
 
 // Reader
 static unsigned int readerNodeId;
@@ -164,7 +165,6 @@ struct segment_yuv init_image_segment(struct c63_common* cm)
 	SCICreateSegment(sd, &imageSegment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
 	sisci_assert(error);
 
-	void *cudaBuffer;
 	cudaMalloc(&cudaBuffer, segmentSize);
 
 	struct cudaPointerAttributes attributes;
@@ -230,11 +230,10 @@ void init_local_encoded_data_segment() {
 	uint32_t localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | 37;
 
 	sci_error_t error;
-
 	SCICreateSegment(vd, &encodedDataSegmentLocal, localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIPrepareSegment(encodedDataSegmentLocal, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCIPrepareSegment(encodedDataSegmentLocal, localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
 	sisci_assert(error);
 
 	void* buffer = SCIMapLocalSegment(encodedDataSegmentLocal, &encodedDataMapLocal, 0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
@@ -278,6 +277,8 @@ void cleanup_segments()
 	cleanup_local_segment(&imageSegment, &imageMap);
 	cleanup_local_segment(&encodedDataSegmentLocal, &encodedDataMapLocal);
 	cleanup_remote_segment(&encodedDataSegmentWriter);
+
+	cudaFree(cudaBuffer);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)
@@ -328,6 +329,17 @@ void wait_for_writer()
 	} while (error != SCI_ERR_OK);
 }
 
+
+sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
+	if (status == SCI_ERR_OK) {
+		// Send interrupt to computation node signaling that the frame has been transferred
+		signal_writer(DATA_TRANSFERRED);
+	}
+
+	return SCI_CALLBACK_CANCEL;
+
+}
+
 void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* residuals)
 {
 	sci_error_t error;
@@ -341,11 +353,11 @@ void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* res
 	//memcpy(residuals_U, residuals->Udct, residualsSizeU);
 	//memcpy(residuals_V, residuals->Vdct, residualsSizeV);
 
-	SCIStartDmaTransfer(dmaQueue, encodedDataSegmentLocal, encodedDataSegmentWriter, 0, segmentSizeWriter, 0, NULL, NULL, SCI_NO_FLAGS, &error);
+	SCIStartDmaTransfer(dmaQueue, encodedDataSegmentLocal, encodedDataSegmentWriter, 0, segmentSizeWriter, 0, dma_callback, NULL, SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
 
-	SCIWaitForDMAQueue(dmaQueue, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	//SCIWaitForDMAQueue(dmaQueue, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	//sisci_assert(error);
 }
 
 void signal_reader()

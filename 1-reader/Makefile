@@ -24,7 +24,7 @@ INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 
-CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
+CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS)) -D_REENTRANT
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
 
 ifeq ($(VIDEO),0)
@@ -47,7 +47,7 @@ all: c63read
 	$(CC) $(CCFLAGS) -c $< -o $@
 
 c63read: c63read.o sisci.o
-	$(CC) $^ $(LDFLAGS) -o $@
+	$(CC) $^ $(LDFLAGS) $(CCFLAGS) -o $@
 
 clean:
 	rm -f *.o c63read

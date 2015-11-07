@@ -45,10 +45,13 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	SCICreateDataInterrupt(sds[0], &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
 	sisci_assert(error);
 
-	// Connect reader node to remote interrupt at processing machine
+	// Connect writer node to remote interrupt at processing machine
+	printf("Connecting to interrupt on encoder... ");
+	fflush(stdout);
 	do {
 		SCIConnectInterrupt(sds[0], &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	} while (error != SCI_ERR_OK);
+	printf("Done!\n");
 }
 
 

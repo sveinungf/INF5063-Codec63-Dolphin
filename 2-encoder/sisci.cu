@@ -169,7 +169,8 @@ void set_sizes_offsets(struct c63_common *cm) {
 struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 {
 	struct segment_yuv image;
-	unsigned int localSegmentId = (localNodeId << 16) | (readerNodeId << 8) | (SEGMENT_ENCODER_IMAGE + segNum);
+	c63_segment segment = segNum == 0 ? SEGMENT_ENCODER_IMAGE : SEGMENT_ENCODER_IMAGE2;
+	uint32_t localSegmentId = getLocalSegId(localNodeId, readerNodeId, segment);
 
 	unsigned int imageSizeY = cm->ypw * cm->yph * sizeof(uint8_t);
 	unsigned int imageSizeU = cm->upw * cm->uph * sizeof(uint8_t);
@@ -215,7 +216,8 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 
 void init_remote_encoded_data_segment(int segNum)
 {
-	unsigned int remoteSegmentId = (writerNodeId << 16) | (localNodeId << 8) | (SEGMENT_WRITER_ENCODED + segNum);
+	c63_segment segment = segNum == 0 ? SEGMENT_WRITER_ENCODED : SEGMENT_WRITER_ENCODED2;
+	uint32_t remoteSegmentId = getRemoteSegId(localNodeId, writerNodeId, segment);
 
 	sci_error_t error;
 
@@ -231,7 +233,7 @@ void init_remote_encoded_data_segment(int segNum)
 }
 
 void init_local_encoded_data_segment() {
-	uint32_t localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | 37;
+	uint32_t localSegmentId = getLocalSegId(localNodeId, writerNodeId, SEGMENT_ENCODER_ENCODED);
 
 	sci_error_t error;
 	SCICreateSegment(writer_sds[0], &encodedDataSegmentLocal, localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);

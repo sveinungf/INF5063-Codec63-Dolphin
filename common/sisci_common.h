@@ -12,22 +12,28 @@ typedef enum {
 	NO_MORE_FRAMES
 } encoder_signal;
 
+typedef enum {
+	ENCODING_FINISHED,
+	DATA_TRANSFERRED
+} writer_signal;
+
 // Interrupts
 typedef enum {
-	READY_FOR_ORIG_TRANSFER = 1000,
-	MORE_DATA_TRANSFERRED = 15,
-	ENCODED_FRAME_TRANSFERRED = 20,
-	DATA_WRITTEN = 25
+	READY_FOR_ORIG_TRANSFER,
+	MORE_DATA_TRANSFERRED,
+	ENCODED_FRAME_TRANSFERRED,
+	DATA_WRITTEN
 } c63_interrupt;
 
 // Segments
 typedef enum {
-	SEGMENT_ENCODER_IMAGE = 177
-} c63_segment_encoder;
-
-typedef enum {
-	SEGMENT_WRITER_ENCODED = 193
-} c63_segment_writer;
+	SEGMENT_READER_IMAGE,
+	SEGMENT_ENCODER_IMAGE,
+	SEGMENT_ENCODER_IMAGE2,
+	SEGMENT_ENCODER_ENCODED,
+	SEGMENT_WRITER_ENCODED,
+	SEGMENT_WRITER_ENCODED2
+} c63_segment;
 
 struct segment_yuv
 {
@@ -35,5 +41,15 @@ struct segment_yuv
 	const volatile uint8_t* U;
 	const volatile uint8_t* V;
 };
+
+static inline uint32_t getLocalSegId(unsigned int localNodeId, unsigned int remoteNodeId, c63_segment segment)
+{
+	return (localNodeId << 24) | (remoteNodeId << 16) | segment;
+}
+
+static inline uint32_t getRemoteSegId(unsigned int localNodeId, unsigned int remoteNodeId, c63_segment segment)
+{
+	return getLocalSegId(remoteNodeId, localNodeId, segment);
+}
 
 #endif /* SISCI_COMMON_H_ */

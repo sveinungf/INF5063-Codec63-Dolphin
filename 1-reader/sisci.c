@@ -84,8 +84,7 @@ void init_image_segments(struct segment_yuv *images, unsigned int sizeY, unsigne
 
 	imageSize = sizeY + sizeU + sizeV;
 
-	//struct segment_yuv image;
-	unsigned int localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | 167;
+	uint32_t localSegmentId = getLocalSegId(localNodeId, encoderNodeId, SEGMENT_READER_IMAGE);
 	SCICreateSegment(sd, &localImageSegment, localSegmentId, 2*(imageSize), SCI_NO_CALLBACK, NULL,
 			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
@@ -108,8 +107,8 @@ void init_image_segments(struct segment_yuv *images, unsigned int sizeY, unsigne
 	images[1].U = images[1].Y + sizeY;
 	images[1].V = images[1].U + sizeU;
 
-	unsigned int remoteSegmentId = (encoderNodeId << 16) | (localNodeId << 8)
-			| SEGMENT_ENCODER_IMAGE;
+	uint32_t remoteSegmentId = getRemoteSegId(localNodeId, encoderNodeId, SEGMENT_ENCODER_IMAGE);
+
 	do
 	{
 		SCIConnectSegment(sd, &remoteImageSegment, encoderNodeId, remoteSegmentId, localAdapterNo,

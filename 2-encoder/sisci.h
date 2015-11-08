@@ -4,11 +4,6 @@
 #include "../common/sisci_common.h"
 #include "c63.h"
 
-typedef enum {
-	ENCODING_FINISHED,
-	DATA_TRANSFERRED
-} writer_signal;
-
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode);
 void cleanup_SISCI();
 

@@ -74,7 +74,8 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	sci_error_t error;
 
 	// Set local segment id
-	uint32_t localSegmentId = (localNodeId << 16) | (encoderNodeId << 8) | (SEGMENT_WRITER_ENCODED + segNum);
+	c63_segment segment = segNum == 0 ? SEGMENT_WRITER_ENCODED : SEGMENT_WRITER_ENCODED2;
+	uint32_t localSegmentId = getLocalSegId(localNodeId, encoderNodeId, segment);
 
 	// Create the local segment for the processing machine to copy into
 	SCICreateSegment(sds[segNum], &localSegments[segNum], localSegmentId, localSegmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);

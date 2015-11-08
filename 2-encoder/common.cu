@@ -175,7 +175,7 @@ struct macroblock *create_mb(struct macroblock *mb, size_t size, const cudaStrea
 	return mb;
 }
 
-struct frame* create_frame(struct c63_common *cm)
+struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
 	struct frame *f = (frame*) malloc(sizeof(struct frame));
 
@@ -199,9 +199,9 @@ struct frame* create_frame(struct c63_common *cm)
 
 	size_t sizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
 	size_t sizeUV = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
-	f->mbs[Y_COMPONENT] = create_mb(f->mbs[Y_COMPONENT], sizeY, cm->cuda_data.streamY);
-	f->mbs[U_COMPONENT] = create_mb(f->mbs[U_COMPONENT], sizeUV, cm->cuda_data.streamU);
-	f->mbs[V_COMPONENT] = create_mb(f->mbs[V_COMPONENT], sizeUV, cm->cuda_data.streamV);
+	f->mbs[Y_COMPONENT] = create_mb(f->mbs[Y_COMPONENT], sizeY, c63_cuda.streamY);
+	f->mbs[U_COMPONENT] = create_mb(f->mbs[U_COMPONENT], sizeUV, c63_cuda.streamU);
+	f->mbs[V_COMPONENT] = create_mb(f->mbs[V_COMPONENT], sizeUV, c63_cuda.streamV);
 
 	init_frame_gpu(cm, f);
 

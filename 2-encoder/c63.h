@@ -107,17 +107,6 @@ struct boundaries
 	const int* __restrict__ bottom;
 };
 
-struct cuda_data
-{
-	cudaStream_t streamY;
-	cudaStream_t streamU;
-	cudaStream_t streamV;
-
-	unsigned int* sad_index_resultsY;
-	unsigned int* sad_index_resultsU;
-	unsigned int* sad_index_resultsV;
-};
-
 struct c63_common
 {
   int width, height;
@@ -148,8 +137,6 @@ struct c63_common
   struct boundaries me_boundariesY;
   struct boundaries me_boundariesU;
   struct boundaries me_boundariesV;
-
-  struct cuda_data cuda_data;
 };
 
 #endif  /* C63_C63_H_ */

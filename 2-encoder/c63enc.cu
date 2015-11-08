@@ -12,6 +12,7 @@
 #include "c63.h"
 #include "common.h"
 #include "init.h"
+#include "init_cuda.h"
 #include "me.h"
 #include "sisci.h"
 
@@ -19,20 +20,23 @@ extern "C" {
 #include "tables.h"
 }
 
-
 /* getopt */
 extern int optind;
 extern char *optarg;
 
-static void zero_out_prediction(struct c63_common* cm)
+static void zero_out_prediction(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 {
 	struct frame* frame = cm->curframe;
-	cudaMemsetAsync(frame->predicted_gpu->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t), cm->cuda_data.streamY);
-	cudaMemsetAsync(frame->predicted_gpu->U, 0, cm->upw * cm->uph * sizeof(uint8_t), cm->cuda_data.streamU);
-	cudaMemsetAsync(frame->predicted_gpu->V, 0, cm->vpw * cm->vph * sizeof(uint8_t), cm->cuda_data.streamV);
+	cudaMemsetAsync(frame->predicted_gpu->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t),
+			c63_cuda.streamY);
+	cudaMemsetAsync(frame->predicted_gpu->U, 0, cm->upw * cm->uph * sizeof(uint8_t),
+			c63_cuda.streamU);
+	cudaMemsetAsync(frame->predicted_gpu->V, 0, cm->vpw * cm->vph * sizeof(uint8_t),
+			c63_cuda.streamV);
 }
 
-static void c63_encode_image(struct c63_common *cm, struct segment_yuv* image_gpu)
+static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
+		const struct c63_cuda& c63_cuda, struct segment_yuv* image_gpu)
 {
 	// Advance to next frame by swapping current and reference frame
 	std::swap(cm->curframe, cm->refframe);
@@ -45,21 +49,24 @@ static void c63_encode_image(struct c63_common *cm, struct segment_yuv* image_gp
 		cm->curframe->keyframe = 1;
 		cm->frames_since_keyframe = 0;
 	}
-	else { cm->curframe->keyframe = 0; }
+	else
+	{
+		cm->curframe->keyframe = 0;
+	}
 
 	if (!cm->curframe->keyframe)
 	{
 		/* Motion Estimation */
-		gpu_c63_motion_estimate(cm);
+		gpu_c63_motion_estimate(cm, cm_gpu, c63_cuda);
 
 		/* Motion Compensation */
-		gpu_c63_motion_compensate(cm);
+		gpu_c63_motion_compensate(cm, c63_cuda);
 	}
 	else
 	{
 		// dct_quantize() expects zeroed out prediction buffers for key frames.
 		// We zero them out here since we reuse the buffers from previous frames.
-		zero_out_prediction(cm);
+		zero_out_prediction(cm, c63_cuda);
 	}
 
 	yuv_t* predicted = cm->curframe->predicted_gpu;
@@ -67,64 +74,48 @@ static void c63_encode_image(struct c63_common *cm, struct segment_yuv* image_gp
 
 	const dim3 threadsPerBlock(8, 8);
 
-	const dim3 numBlocks_Y(cm->padw[Y_COMPONENT]/threadsPerBlock.x, cm->padh[Y_COMPONENT]/threadsPerBlock.y);
-	const dim3 numBlocks_UV(cm->padw[U_COMPONENT]/threadsPerBlock.x, cm->padh[U_COMPONENT]/threadsPerBlock.y);
+	const dim3 numBlocks_Y(cm->padw[Y_COMPONENT] / threadsPerBlock.x,
+			cm->padh[Y_COMPONENT] / threadsPerBlock.y);
+	const dim3 numBlocks_UV(cm->padw[U_COMPONENT] / threadsPerBlock.x,
+			cm->padh[U_COMPONENT] / threadsPerBlock.y);
 
 	/* DCT and Quantization */
-	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, cm->cuda_data.streamY>>>((const uint8_t*)cm->curframe->orig_gpu->Y, predicted->Y,
-			cm->padw[Y_COMPONENT], residuals->Ydct, Y_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Ydct, residuals->Ydct, cm->padw[Y_COMPONENT]*cm->padh[Y_COMPONENT]*sizeof(int16_t),
-			cudaMemcpyDeviceToHost, cm->cuda_data.streamY);
+	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.streamY>>>(
+			(const uint8_t*) cm->curframe->orig_gpu->Y, predicted->Y, cm->padw[Y_COMPONENT],
+			residuals->Ydct, Y_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Ydct, residuals->Ydct,
+			cm->padw[Y_COMPONENT] * cm->padh[Y_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
+			c63_cuda.streamY);
 
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamU>>>((const uint8_t*)cm->curframe->orig_gpu->U, predicted->U,
-			cm->padw[U_COMPONENT], residuals->Udct, U_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Udct, residuals->Udct, cm->padw[U_COMPONENT]*cm->padh[U_COMPONENT]*sizeof(int16_t),
-			cudaMemcpyDeviceToHost, cm->cuda_data.streamU);
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamU>>>(
+			(const uint8_t*) cm->curframe->orig_gpu->U, predicted->U, cm->padw[U_COMPONENT],
+			residuals->Udct, U_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Udct, residuals->Udct,
+			cm->padw[U_COMPONENT] * cm->padh[U_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
+			c63_cuda.streamU);
 
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamV>>>((const uint8_t*)cm->curframe->orig_gpu->V, predicted->V,
-			cm->padw[V_COMPONENT], residuals->Vdct, V_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct, cm->padw[V_COMPONENT]*cm->padh[V_COMPONENT]*sizeof(int16_t),
-			cudaMemcpyDeviceToHost, cm->cuda_data.streamV);
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamV>>>(
+			(const uint8_t*) cm->curframe->orig_gpu->V, predicted->V, cm->padw[V_COMPONENT],
+			residuals->Vdct, V_COMPONENT);
+	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct,
+			cm->padw[V_COMPONENT] * cm->padh[V_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
+			c63_cuda.streamV);
 
 	/* Reconstruct frame for inter-prediction */
-	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, cm->cuda_data.streamY>>>(residuals->Ydct, predicted->Y,
-			cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
+	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.streamY>>>(residuals->Ydct,
+			predicted->Y, cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
 
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamU>>>(residuals->Udct, predicted->U,
-			cm->upw, cm->curframe->recons_gpu->U, U_COMPONENT);
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamU>>>(residuals->Udct,
+			predicted->U, cm->upw, cm->curframe->recons_gpu->U, U_COMPONENT);
 
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, cm->cuda_data.streamV>>>(residuals->Vdct, predicted->V,
-			cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamV>>>(residuals->Vdct,
+			predicted->V, cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the
-     prediction is correct */
+	 prediction is correct */
 }
 
-static void init_cuda_data(c63_common* cm)
-{
-	cuda_data* cuda_me = &(cm->cuda_data);
-
-	cudaStreamCreate(&cuda_me->streamY);
-	cudaStreamCreate(&cuda_me->streamU);
-	cudaStreamCreate(&cuda_me->streamV);
-
-	cudaMalloc((void**) &cuda_me->sad_index_resultsY, cm->mb_colsY*cm->mb_rowsY*sizeof(unsigned int));
-	cudaMalloc((void**) &cuda_me->sad_index_resultsU, cm->mb_colsU*cm->mb_rowsU*sizeof(unsigned int));
-	cudaMalloc((void**) &cuda_me->sad_index_resultsV, cm->mb_colsV*cm->mb_rowsV*sizeof(unsigned int));
-}
-
-static void deinit_cuda_data(c63_common* cm)
-{
-	cudaStreamDestroy(cm->cuda_data.streamY);
-	cudaStreamDestroy(cm->cuda_data.streamU);
-	cudaStreamDestroy(cm->cuda_data.streamV);
-
-	cudaFree(cm->cuda_data.sad_index_resultsY);
-	cudaFree(cm->cuda_data.sad_index_resultsU);
-	cudaFree(cm->cuda_data.sad_index_resultsV);
-}
-
-struct c63_common* init_c63_enc(int width, int height)
+struct c63_common* init_c63_enc(int width, int height, const struct c63_cuda& c63_cuda)
 {
 	/* calloc() sets allocated memory to zero */
 	struct c63_common *cm = (struct c63_common*) calloc(1, sizeof(struct c63_common));
@@ -162,12 +153,10 @@ struct c63_common* init_c63_enc(int width, int height)
 		cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
 	}
 
-	init_cuda_data(cm);
+	init_boundaries(cm, c63_cuda);
 
-	cm->curframe = create_frame(cm);
-	cm->refframe = create_frame(cm);
-
-	init_boundaries(cm);
+	cm->curframe = create_frame(cm, c63_cuda);
+	cm->refframe = create_frame(cm, c63_cuda);
 
 	return cm;
 }
@@ -178,8 +167,6 @@ void free_c63_enc(struct c63_common* cm)
 
 	destroy_frame(cm->curframe);
 	destroy_frame(cm->refframe);
-
-	deinit_cuda_data(cm);
 
 	free(cm);
 }
@@ -243,7 +230,9 @@ int main(int argc, char **argv)
 	receive_width_and_height(&width, &height);
 	send_width_and_height(width, height);
 
-	struct c63_common *cm = init_c63_enc(width, height);
+	struct c63_cuda c63_cuda = init_c63_cuda();
+	struct c63_common *cm = init_c63_enc(width, height, c63_cuda);
+	struct c63_common_gpu cm_gpu = init_c63_gpu(cm);
 
 	set_sizes_offsets(cm);
 
@@ -281,24 +270,26 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		c63_encode_image(cm, &images_gpu[0]);
+		c63_encode_image(cm, cm_gpu, c63_cuda, &images_gpu[0]);
 
 		// Wait until the GPU has finished encoding
-		cudaStreamSynchronize(cm->cuda_data.streamY);
-		cudaStreamSynchronize(cm->cuda_data.streamU);
-		cudaStreamSynchronize(cm->cuda_data.streamV);
+		cudaStreamSynchronize(c63_cuda.streamY);
+		cudaStreamSynchronize(c63_cuda.streamU);
+		cudaStreamSynchronize(c63_cuda.streamV);
 
 		printf(", encoded\n");
 		fflush(stdout);
 
-		if (numframes != 0 && transferred == 2) {
+		if (numframes != 0 && transferred == 2)
+		{
 			// The writer sends an interrupt when it is ready for the next frame
 			wait_for_writer();
 			--transferred;
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
-		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals, segNum);
+		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals,
+				segNum);
 		++transferred;
 
 		// Reader can transfer next frame
@@ -317,6 +308,7 @@ int main(int argc, char **argv)
 
 	//destroy_image_gpu(image_gpu);
 
+	cleanup_c63_cuda(c63_cuda);
 	free_c63_enc(cm);
 
 	cleanup_segments();

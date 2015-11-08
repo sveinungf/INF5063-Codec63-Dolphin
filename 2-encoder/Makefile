@@ -64,13 +64,10 @@ all: c63enc
 
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
-
-#%.o: %.c
-#	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 
-c63enc: c63enc.o tables.o zimd_dsp.o common.o me.o sisci.o
+c63enc: c63enc.o init_cuda.o init.o tables.o zimd_dsp.o common.o me.o sisci.o
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:

@@ -147,9 +147,9 @@ static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 
 	cudaMalloc((void**) &f->mbs_gpu[Y_COMPONENT], cm->mb_rowsY * cm->mb_colsY *
 			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[U_COMPONENT], cm->mb_rowsUV * cm->mb_colsUV *
+	cudaMalloc((void**) &f->mbs_gpu[U_COMPONENT], cm->mb_rowsU * cm->mb_colsU *
 			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[V_COMPONENT], cm->mb_rowsUV * cm->mb_colsUV *
+	cudaMalloc((void**) &f->mbs_gpu[V_COMPONENT], cm->mb_rowsV * cm->mb_colsV *
 			sizeof(struct macroblock));
 }
 
@@ -198,7 +198,7 @@ struct frame* create_frame(struct c63_common *cm)
 	*/
 
 	size_t sizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
-	size_t sizeUV = cm->mb_rowsUV * cm->mb_colsUV * sizeof(struct macroblock);
+	size_t sizeUV = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
 	f->mbs[Y_COMPONENT] = create_mb(f->mbs[Y_COMPONENT], sizeY, cm->cuda_data.streamY);
 	f->mbs[U_COMPONENT] = create_mb(f->mbs[U_COMPONENT], sizeUV, cm->cuda_data.streamU);
 	f->mbs[V_COMPONENT] = create_mb(f->mbs[V_COMPONENT], sizeUV, cm->cuda_data.streamV);

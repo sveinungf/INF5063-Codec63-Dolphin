@@ -27,7 +27,8 @@
 
 // Motion estimation search range, pixels in every direction
 #define ME_RANGE_Y 16
-#define ME_RANGE_UV (ME_RANGE_Y/2)
+#define ME_RANGE_U (ME_RANGE_Y/2)
+#define ME_RANGE_V (ME_RANGE_Y/2)
 
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
@@ -125,7 +126,8 @@ struct c63_common
   int padw[COLOR_COMPONENTS], padh[COLOR_COMPONENTS];
 
   int mb_colsY, mb_rowsY;
-  int mb_colsUV, mb_rowsUV;
+  int mb_colsU, mb_rowsU;
+  int mb_colsV, mb_rowsV;
 
   uint8_t qp;                         // Quality parameter
 
@@ -144,7 +146,8 @@ struct c63_common
   struct entropy_ctx e_ctx;
 
   struct boundaries me_boundariesY;
-  struct boundaries me_boundariesUV;
+  struct boundaries me_boundariesU;
+  struct boundaries me_boundariesV;
 
   struct cuda_data cuda_data;
 };

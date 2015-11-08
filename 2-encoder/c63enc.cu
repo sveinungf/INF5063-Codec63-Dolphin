@@ -11,6 +11,7 @@
 
 #include "c63.h"
 #include "common.h"
+#include "init.h"
 #include "me.h"
 #include "sisci.h"
 
@@ -99,121 +100,6 @@ static void c63_encode_image(struct c63_common *cm, struct segment_yuv* image_gp
      prediction is correct */
 }
 
-static void init_boundaries(c63_common* cm)
-{
-	int hY = cm->padh[Y_COMPONENT];
-	int hUV = cm->padh[U_COMPONENT];
-
-	int wY = cm->padw[Y_COMPONENT];
-	int wUV = cm->padw[U_COMPONENT];
-
-	int* leftsY = new int[cm->mb_colsY];
-	int* leftsUV = new int[cm->mb_colsUV];
-	int* rightsY = new int[cm->mb_colsY];
-	int* rightsUV = new int[cm->mb_colsUV];
-	int* topsY = new int[cm->mb_rowsY];
-	int* topsUV = new int[cm->mb_rowsUV];
-	int* bottomsY = new int[cm->mb_rowsY];
-	int* bottomsUV = new int[cm->mb_rowsUV];
-
-	for (int mb_x = 0; mb_x < cm->mb_colsY; ++mb_x) {
-		leftsY[mb_x] = mb_x * 8 - ME_RANGE_Y;
-		rightsY[mb_x] = mb_x * 8 + ME_RANGE_Y;
-
-		if (leftsY[mb_x] < 0) {
-			leftsY[mb_x] = 0;
-		}
-
-		if (rightsY[mb_x] > (wY - 8)) {
-			rightsY[mb_x] = wY - 8;
-		}
-	}
-
-	for (int mb_x = 0; mb_x < cm->mb_colsUV; ++mb_x) {
-		leftsUV[mb_x] = mb_x * 8 - ME_RANGE_UV;
-		rightsUV[mb_x] = mb_x * 8 + ME_RANGE_UV;
-
-		if (leftsUV[mb_x] < 0) {
-			leftsUV[mb_x] = 0;
-		}
-
-		if (rightsUV[mb_x] > (wUV - 8)) {
-			rightsUV[mb_x] = wUV - 8;
-		}
-	}
-
-	for (int mb_y = 0; mb_y < cm->mb_rowsY; ++mb_y) {
-		topsY[mb_y] = mb_y * 8 - ME_RANGE_Y;
-		bottomsY[mb_y] = mb_y * 8 + ME_RANGE_Y;
-
-		if (topsY[mb_y] < 0) {
-			topsY[mb_y] = 0;
-		}
-
-		if (bottomsY[mb_y] > (hY - 8)) {
-			bottomsY[mb_y] = hY - 8;
-		}
-	}
-
-	for (int mb_y = 0; mb_y < cm->mb_rowsUV; ++mb_y) {
-		topsUV[mb_y] = mb_y * 8 - ME_RANGE_UV;
-		bottomsUV[mb_y] = mb_y * 8 + ME_RANGE_UV;
-
-		if (topsUV[mb_y] < 0) {
-			topsUV[mb_y] = 0;
-		}
-
-		if (bottomsUV[mb_y] > (hUV - 8)) {
-			bottomsUV[mb_y] = hUV - 8;
-		}
-	}
-
-	struct boundaries* boundY = &cm->me_boundariesY;
-	cudaMalloc((void**) &boundY->left, cm->mb_colsY * sizeof(int));
-	cudaMalloc((void**) &boundY->right, cm->mb_colsY * sizeof(int));
-	cudaMalloc((void**) &boundY->top, cm->mb_rowsY * sizeof(int));
-	cudaMalloc((void**) &boundY->bottom, cm->mb_rowsY * sizeof(int));
-
-	struct boundaries* boundUV = &cm->me_boundariesUV;
-	cudaMalloc((void**) &boundUV->left, cm->mb_colsUV * sizeof(int));
-	cudaMalloc((void**) &boundUV->right, cm->mb_colsUV * sizeof(int));
-	cudaMalloc((void**) &boundUV->top, cm->mb_rowsUV * sizeof(int));
-	cudaMalloc((void**) &boundUV->bottom, cm->mb_rowsUV * sizeof(int));
-
-	const cudaStream_t& streamY = cm->cuda_data.streamY;
-	cudaMemcpyAsync((void*) boundY->left, leftsY, cm->mb_colsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
-	cudaMemcpyAsync((void*) boundY->right, rightsY, cm->mb_colsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
-	cudaMemcpyAsync((void*) boundY->top, topsY, cm->mb_rowsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
-	cudaMemcpyAsync((void*) boundY->bottom, bottomsY, cm->mb_rowsY * sizeof(int), cudaMemcpyHostToDevice, streamY);
-
-	cudaMemcpy((void*) boundUV->left, leftsUV, cm->mb_colsUV * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy((void*) boundUV->right, rightsUV, cm->mb_colsUV * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy((void*) boundUV->top, topsUV, cm->mb_rowsUV * sizeof(int), cudaMemcpyHostToDevice);
-	cudaMemcpy((void*) boundUV->bottom, bottomsUV, cm->mb_rowsUV * sizeof(int), cudaMemcpyHostToDevice);
-
-	delete[] leftsY;
-	delete[] leftsUV;
-	delete[] rightsY;
-	delete[] rightsUV;
-	delete[] topsY;
-	delete[] topsUV;
-	delete[] bottomsY;
-	delete[] bottomsUV;
-}
-
-static void deinit_boundaries(c63_common* cm)
-{
-	cudaFree((void*) cm->me_boundariesY.left);
-	cudaFree((void*) cm->me_boundariesY.right);
-	cudaFree((void*) cm->me_boundariesY.top);
-	cudaFree((void*) cm->me_boundariesY.bottom);
-
-	cudaFree((void*) cm->me_boundariesUV.left);
-	cudaFree((void*) cm->me_boundariesUV.right);
-	cudaFree((void*) cm->me_boundariesUV.top);
-	cudaFree((void*) cm->me_boundariesUV.bottom);
-}
-
 static void init_cuda_data(c63_common* cm)
 {
 	cuda_data* cuda_me = &(cm->cuda_data);
@@ -223,8 +109,8 @@ static void init_cuda_data(c63_common* cm)
 	cudaStreamCreate(&cuda_me->streamV);
 
 	cudaMalloc((void**) &cuda_me->sad_index_resultsY, cm->mb_colsY*cm->mb_rowsY*sizeof(unsigned int));
-	cudaMalloc((void**) &cuda_me->sad_index_resultsU, cm->mb_colsUV*cm->mb_rowsUV*sizeof(unsigned int));
-	cudaMalloc((void**) &cuda_me->sad_index_resultsV, cm->mb_colsUV*cm->mb_rowsUV*sizeof(unsigned int));
+	cudaMalloc((void**) &cuda_me->sad_index_resultsU, cm->mb_colsU*cm->mb_rowsU*sizeof(unsigned int));
+	cudaMalloc((void**) &cuda_me->sad_index_resultsV, cm->mb_colsV*cm->mb_rowsV*sizeof(unsigned int));
 }
 
 static void deinit_cuda_data(c63_common* cm)
@@ -237,15 +123,6 @@ static void deinit_cuda_data(c63_common* cm)
 	cudaFree(cm->cuda_data.sad_index_resultsU);
 	cudaFree(cm->cuda_data.sad_index_resultsV);
 }
-
-/*
-static void copy_image_to_gpu(struct c63_common* cm, const struct segment_yuv& image, yuv_t* image_gpu)
-{
-	cudaMemcpyAsync(image_gpu->Y, (void*) image.Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamY);
-	cudaMemcpyAsync(image_gpu->U, (void*) image.U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamU);
-	cudaMemcpyAsync(image_gpu->V, (void*) image.V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyHostToDevice, cm->cuda_data.streamV);
-}
-*/
 
 struct c63_common* init_c63_enc(int width, int height)
 {
@@ -263,9 +140,12 @@ struct c63_common* init_c63_enc(int width, int height)
 	cm->padh[V_COMPONENT] = cm->vph = (uint32_t) (ceil(height * VY / (YY * 8.0f)) * 8);
 
 	cm->mb_colsY = cm->ypw / 8;
+	cm->mb_colsU = cm->mb_colsY / 2;
+	cm->mb_colsV = cm->mb_colsU;
+
 	cm->mb_rowsY = cm->yph / 8;
-	cm->mb_colsUV = cm->mb_colsY / 2;
-	cm->mb_rowsUV = cm->mb_rowsY / 2;
+	cm->mb_rowsU = cm->mb_rowsY / 2;
+	cm->mb_rowsV = cm->mb_rowsU;
 
 	/* Quality parameters -- Home exam deliveries should have original values,
 	 i.e., quantization factor should be 25, search range should be 16, and the
@@ -294,7 +174,7 @@ struct c63_common* init_c63_enc(int width, int height)
 
 void free_c63_enc(struct c63_common* cm)
 {
-	deinit_boundaries(cm);
+	cleanup_boundaries(cm);
 
 	destroy_frame(cm->curframe);
 	destroy_frame(cm->refframe);

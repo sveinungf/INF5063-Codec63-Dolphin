@@ -12,7 +12,7 @@ CCFLAGS = -Wall
 LDFLAGS = -lm
 
 ifeq ($(DEBUG),1)
-	CCFLAGS += -Og -g -pg -DSHOW_CYCLES
+	CCFLAGS += -Og -g -pg
 else
 	CCFLAGS += -O3
 endif

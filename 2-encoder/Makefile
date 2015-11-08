@@ -10,7 +10,7 @@ NODE_ID_WRITER ?= 8
 LOCAL_ADAPTER_NO ?= 0
 
 CCFLAGS = -Wall -march=native
-NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo -D_REENTRANT
+NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
 PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
 LDFLAGS = -lm
 
@@ -28,6 +28,7 @@ INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 
+CCFLAGS += -D_REENTRANT
 CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
 

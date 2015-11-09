@@ -72,7 +72,8 @@ c63enc: c63enc.o cuda/init_cuda.o cuda/me.o init.o tables.o zimd_dsp.o common.o 
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:
-	rm -f *.o c63enc $(OUTPUT_VIDEO)
+	find . -type f -name '*.o' -delete
+	rm -f c63enc $(OUTPUT_VIDEO)
 
 encode: c63enc
 	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)

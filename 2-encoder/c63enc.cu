@@ -17,6 +17,7 @@
 #include "sisci.h"
 
 extern "C" {
+#include "simd/me.h"
 #include "tables.h"
 }
 
@@ -61,9 +62,38 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 	if (!cm->curframe->keyframe)
 	{
 		/* Motion Estimation */
+#if 1
 		gpu_c63_motion_estimate<Y>(cm, cm_gpu, c63_cuda);
 		gpu_c63_motion_estimate<U>(cm, cm_gpu, c63_cuda);
 		gpu_c63_motion_estimate<V>(cm, cm_gpu, c63_cuda);
+#else
+		yuv_t orig_gpu2;
+		orig_gpu2.Y = (uint8_t*) cm->curframe->orig_gpu->Y;
+		orig_gpu2.U = (uint8_t*) cm->curframe->orig_gpu->U;
+		orig_gpu2.V = (uint8_t*) cm->curframe->orig_gpu->V;
+
+		yuv_t* orig_gpu = &orig_gpu2;
+
+		yuv_t* orig = cm->curframe->orig;
+		yuv_t* recons = cm->refframe->recons;
+		yuv_t* recons_gpu = cm->refframe->recons_gpu;
+		struct macroblock** mbs_gpu = cm->curframe->mbs_gpu;
+		struct macroblock** mbs = cm->curframe->mbs;
+
+		cudaMemcpy(orig->Y, orig_gpu->Y, cm->padw[Y] * cm->padh[Y] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+		cudaMemcpy(orig->U, orig_gpu->U, cm->padw[U] * cm->padh[U] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+		cudaMemcpy(orig->V, orig_gpu->V, cm->padw[V] * cm->padh[V] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+		cudaMemcpy(recons->Y, recons_gpu->Y, cm->padw[Y] * cm->padh[Y] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+		cudaMemcpy(recons->U, recons_gpu->U, cm->padw[U] * cm->padh[U] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+		cudaMemcpy(recons->V, recons_gpu->V, cm->padw[V] * cm->padh[V] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
+		c63_motion_estimate(cm);
+
+		cudaMemcpy(mbs_gpu[Y], mbs[Y], cm->mb_cols[Y] * cm->mb_rows[Y] * sizeof(struct macroblock), cudaMemcpyHostToDevice);
+		cudaMemcpy(mbs_gpu[U], mbs[U], cm->mb_cols[U] * cm->mb_rows[U] * sizeof(struct macroblock), cudaMemcpyHostToDevice);
+		cudaMemcpy(mbs_gpu[V], mbs[V], cm->mb_cols[V] * cm->mb_rows[V] * sizeof(struct macroblock), cudaMemcpyHostToDevice);
+#endif
 
 		/* Motion Compensation */
 		gpu_c63_motion_compensate<Y>(cm, c63_cuda);

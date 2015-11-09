@@ -140,6 +140,8 @@ void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restr
 
 static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 {
+	f->orig = create_image(cm);
+	f->recons = create_image(cm);
 	f->recons_gpu = create_image_gpu(cm);
 	f->predicted_gpu = create_image_gpu(cm);
 
@@ -158,6 +160,8 @@ static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 
 static void deinit_frame_gpu(struct frame* f)
 {
+	destroy_image(f->orig);
+	destroy_image(f->recons);
 	destroy_image_gpu(f->recons_gpu);
 	destroy_image_gpu(f->predicted_gpu);
 

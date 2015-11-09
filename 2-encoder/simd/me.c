@@ -140,7 +140,7 @@ static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *
 	// Macroblock 2
 	struct macroblock *mb2 = &cm->curframe->mbs[color_component][mb_index + 1];
 
-	int range = cm->me_search_range;
+	int range = ME_RANGE_Y; // TODO
 
 	/* Quarter resolution for chroma channels. */
 	if (color_component > 0)
@@ -315,15 +315,26 @@ void c63_motion_estimate(struct c63_common *cm)
 {
 	/* Compare this frame with previous reconstructed frame */
 	int mb_x, mb_y;
+	uint8_t* orig_Y = cm->curframe->orig->Y;
 	uint8_t* orig_U = cm->curframe->orig->U;
 	uint8_t* orig_V = cm->curframe->orig->V;
+	uint8_t* recons_Y = cm->refframe->recons->Y;
 	uint8_t* recons_U = cm->refframe->recons->U;
 	uint8_t* recons_V = cm->refframe->recons->V;
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows / 2; ++mb_y)
+	/* Luma */
+	for (mb_y = 0; mb_y < cm->mb_rows[Y_COMPONENT]; ++mb_y)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols / 2; mb_x += 2)
+		for (mb_x = 0; mb_x < cm->mb_cols[Y_COMPONENT]; mb_x += 2)
+		{
+			me_block_2x8x8(cm, mb_x, mb_y, orig_Y, recons_Y, Y_COMPONENT);
+		}
+	}
+
+	/* Chroma */
+	for (mb_y = 0; mb_y < cm->mb_rows[U_COMPONENT]; ++mb_y)
+	{
+		for (mb_x = 0; mb_x < cm->mb_cols[U_COMPONENT]; mb_x += 2)
 		{
 			me_block_2x8x8(cm, mb_x, mb_y, orig_U, recons_U, U_COMPONENT);
 			me_block_2x8x8(cm, mb_x, mb_y, orig_V, recons_V, V_COMPONENT);
@@ -364,10 +375,19 @@ void c63_motion_compensate(struct c63_common *cm)
 {
 	int mb_x, mb_y;
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows / 2; ++mb_y)
+	/* Luma */
+	for (mb_y = 0; mb_y < cm->mb_rows[Y_COMPONENT]; ++mb_y)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols / 2; ++mb_x)
+		for (mb_x = 0; mb_x < cm->mb_cols[Y_COMPONENT]; ++mb_x)
+		{
+			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->Y, cm->refframe->recons->Y, Y_COMPONENT);
+		}
+	}
+
+	/* Chroma */
+	for (mb_y = 0; mb_y < cm->mb_rows[U_COMPONENT]; ++mb_y)
+	{
+		for (mb_x = 0; mb_x < cm->mb_cols[U_COMPONENT]; ++mb_x)
 		{
 			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->U, cm->refframe->recons->U, U_COMPONENT);
 			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->V, cm->refframe->recons->V, V_COMPONENT);

@@ -22,24 +22,23 @@ void cleanup_c63_cuda(struct c63_cuda& c63_cuda)
 
 struct c63_common_gpu init_c63_gpu(struct c63_common* cm)
 {
-	static const int Y = Y_COMPONENT;
-	static const int U = U_COMPONENT;
-	static const int V = V_COMPONENT;
-
 	struct c63_common_gpu result;
 
-	cudaMalloc(&result.sad_index_resultsY, cm->mb_cols[Y] * cm->mb_rows[Y] * sizeof(unsigned int));
-	cudaMalloc(&result.sad_index_resultsU, cm->mb_cols[U] * cm->mb_rows[U] * sizeof(unsigned int));
-	cudaMalloc(&result.sad_index_resultsV, cm->mb_cols[V] * cm->mb_rows[V] * sizeof(unsigned int));
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		size_t size = cm->mb_cols[i] * cm->mb_rows[i] * sizeof(unsigned int);
+		cudaMalloc(&result.sad_index_results[i], size);
+	}
 
 	return result;
 }
 
 void cleanup_c63_gpu(struct c63_common_gpu& cm_gpu)
 {
-	cudaFree(cm_gpu.sad_index_resultsY);
-	cudaFree(cm_gpu.sad_index_resultsU);
-	cudaFree(cm_gpu.sad_index_resultsV);
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		cudaFree(cm_gpu.sad_index_results[i]);
+	}
 }
 
 struct boundaries init_me_boundaries_gpu(const struct boundaries& indata, int cols, int rows,

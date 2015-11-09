@@ -8,9 +8,7 @@ struct c63_cuda {
 };
 
 struct c63_common_gpu {
-	unsigned int* sad_index_resultsY;
-	unsigned int* sad_index_resultsU;
-	unsigned int* sad_index_resultsV;
+	unsigned int* sad_index_results[COLOR_COMPONENTS];
 };
 
 #endif /* C63_CUDA_H_ */

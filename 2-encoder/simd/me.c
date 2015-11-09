@@ -10,7 +10,7 @@
 #include <immintrin.h>
 #include <stdbool.h>
 
-#include "zimd_me.h"
+#include "me.h"
 
 /*
  * Calculates SAD values comparing one 8x8 block in the current frame to 8x8 blocks

@@ -4,7 +4,7 @@
 #include "../c63.h"
 
 
-void c63_motion_estimate(struct c63_common *cm);
+void c63_motion_estimate(struct c63_common *cm, int component);
 
 void c63_motion_compensate(struct c63_common *cm);
 

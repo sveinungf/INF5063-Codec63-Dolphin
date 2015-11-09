@@ -88,7 +88,9 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		cudaMemcpy(recons->U, recons_gpu->U, cm->padw[U] * cm->padh[U] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
 		cudaMemcpy(recons->V, recons_gpu->V, cm->padw[V] * cm->padh[V] * sizeof(uint8_t), cudaMemcpyDeviceToHost);
 
-		c63_motion_estimate(cm);
+		c63_motion_estimate(cm, Y);
+		c63_motion_estimate(cm, U);
+		c63_motion_estimate(cm, V);
 
 		cudaMemcpy(mbs_gpu[Y], mbs[Y], cm->mb_cols[Y] * cm->mb_rows[Y] * sizeof(struct macroblock), cudaMemcpyHostToDevice);
 		cudaMemcpy(mbs_gpu[U], mbs[U], cm->mb_cols[U] * cm->mb_rows[U] * sizeof(struct macroblock), cudaMemcpyHostToDevice);

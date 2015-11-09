@@ -1,16 +1,17 @@
 #include <assert.h>
 #include <errno.h>
 #include <getopt.h>
+#include <immintrin.h>
 #include <limits.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <immintrin.h>
-#include <stdbool.h>
 
 #include "me.h"
+
 
 /*
  * Calculates SAD values comparing one 8x8 block in the current frame to 8x8 blocks
@@ -311,33 +312,36 @@ static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *
 	mb2->use_mv = 1;
 }
 
-void c63_motion_estimate(struct c63_common *cm)
+void c63_motion_estimate(struct c63_common *cm, int component)
 {
 	/* Compare this frame with previous reconstructed frame */
-	int mb_x, mb_y;
-	uint8_t* orig_Y = cm->curframe->orig->Y;
-	uint8_t* orig_U = cm->curframe->orig->U;
-	uint8_t* orig_V = cm->curframe->orig->V;
-	uint8_t* recons_Y = cm->refframe->recons->Y;
-	uint8_t* recons_U = cm->refframe->recons->U;
-	uint8_t* recons_V = cm->refframe->recons->V;
 
-	/* Luma */
-	for (mb_y = 0; mb_y < cm->mb_rows[Y_COMPONENT]; ++mb_y)
+	uint8_t* orig = NULL;
+	uint8_t* recons = NULL;
+
+	switch (component)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols[Y_COMPONENT]; mb_x += 2)
-		{
-			me_block_2x8x8(cm, mb_x, mb_y, orig_Y, recons_Y, Y_COMPONENT);
-		}
+		case Y_COMPONENT:
+			orig = cm->curframe->orig->Y;
+			recons = cm->refframe->recons->Y;
+			break;
+		case U_COMPONENT:
+			orig = cm->curframe->orig->U;
+			recons = cm->refframe->recons->U;
+			break;
+		case V_COMPONENT:
+			orig = cm->curframe->orig->V;
+			recons = cm->refframe->recons->V;
+			break;
 	}
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows[U_COMPONENT]; ++mb_y)
+	int mb_x, mb_y;
+
+	for (mb_y = 0; mb_y < cm->mb_rows[component]; ++mb_y)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols[U_COMPONENT]; mb_x += 2)
+		for (mb_x = 0; mb_x < cm->mb_cols[component]; mb_x += 2)
 		{
-			me_block_2x8x8(cm, mb_x, mb_y, orig_U, recons_U, U_COMPONENT);
-			me_block_2x8x8(cm, mb_x, mb_y, orig_V, recons_V, V_COMPONENT);
+			me_block_2x8x8(cm, mb_x, mb_y, orig, recons, component);
 		}
 	}
 }

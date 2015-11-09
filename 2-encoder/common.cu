@@ -194,17 +194,11 @@ struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cud
 	f->residuals->Udct = f->residuals->Ydct + residualsSizeY;
 	f->residuals->Vdct = f->residuals->Udct + residualsSizeU;
 
-	/*
-	cudaMallocHost((void**)&f->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t));
-	cudaMallocHost((void**)&f->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t));
-	cudaMallocHost((void**)&f->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t));
-	*/
-
-	size_t sizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
-	size_t sizeUV = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
-	f->mbs[Y_COMPONENT] = create_mb(f->mbs[Y_COMPONENT], sizeY, c63_cuda.streamY);
-	f->mbs[U_COMPONENT] = create_mb(f->mbs[U_COMPONENT], sizeUV, c63_cuda.streamU);
-	f->mbs[V_COMPONENT] = create_mb(f->mbs[V_COMPONENT], sizeUV, c63_cuda.streamV);
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		size_t size = cm->mb_cols[i] * cm->mb_rows[i] * sizeof(struct macroblock);
+		f->mbs[i] = create_mb(f->mbs[i], size, c63_cuda.stream[i]);
+	}
 
 	init_frame_gpu(cm, f);
 

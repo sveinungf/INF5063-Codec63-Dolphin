@@ -32,11 +32,11 @@ static void zero_out_prediction(struct c63_common* cm, const struct c63_cuda& c6
 {
 	struct frame* frame = cm->curframe;
 	cudaMemsetAsync(frame->predicted_gpu->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t),
-			c63_cuda.streamY);
+			c63_cuda.stream[Y]);
 	cudaMemsetAsync(frame->predicted_gpu->U, 0, cm->upw * cm->uph * sizeof(uint8_t),
-			c63_cuda.streamU);
+			c63_cuda.stream[U]);
 	cudaMemsetAsync(frame->predicted_gpu->V, 0, cm->vpw * cm->vph * sizeof(uint8_t),
-			c63_cuda.streamV);
+			c63_cuda.stream[V]);
 }
 
 static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
@@ -84,35 +84,35 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 			cm->padh[U_COMPONENT] / threadsPerBlock.y);
 
 	/* DCT and Quantization */
-	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.streamY>>>(
+	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(
 			(const uint8_t*) cm->curframe->orig_gpu->Y, predicted->Y, cm->padw[Y_COMPONENT],
 			residuals->Ydct, Y_COMPONENT);
 	cudaMemcpyAsync(cm->curframe->residuals->Ydct, residuals->Ydct,
 			cm->padw[Y_COMPONENT] * cm->padh[Y_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.streamY);
+			c63_cuda.stream[Y]);
 
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamU>>>(
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[U]>>>(
 			(const uint8_t*) cm->curframe->orig_gpu->U, predicted->U, cm->padw[U_COMPONENT],
 			residuals->Udct, U_COMPONENT);
 	cudaMemcpyAsync(cm->curframe->residuals->Udct, residuals->Udct,
 			cm->padw[U_COMPONENT] * cm->padh[U_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.streamU);
+			c63_cuda.stream[U]);
 
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamV>>>(
+	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(
 			(const uint8_t*) cm->curframe->orig_gpu->V, predicted->V, cm->padw[V_COMPONENT],
 			residuals->Vdct, V_COMPONENT);
 	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct,
 			cm->padw[V_COMPONENT] * cm->padh[V_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.streamV);
+			c63_cuda.stream[V]);
 
 	/* Reconstruct frame for inter-prediction */
-	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.streamY>>>(residuals->Ydct,
+	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(residuals->Ydct,
 			predicted->Y, cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
 
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamU>>>(residuals->Udct,
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[U]>>>(residuals->Udct,
 			predicted->U, cm->upw, cm->curframe->recons_gpu->U, U_COMPONENT);
 
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.streamV>>>(residuals->Vdct,
+	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(residuals->Vdct,
 			predicted->V, cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the
@@ -277,9 +277,9 @@ int main(int argc, char **argv)
 		c63_encode_image(cm, cm_gpu, c63_cuda, &images_gpu[0]);
 
 		// Wait until the GPU has finished encoding
-		cudaStreamSynchronize(c63_cuda.streamY);
-		cudaStreamSynchronize(c63_cuda.streamU);
-		cudaStreamSynchronize(c63_cuda.streamV);
+		cudaStreamSynchronize(c63_cuda.stream[Y]);
+		cudaStreamSynchronize(c63_cuda.stream[U]);
+		cudaStreamSynchronize(c63_cuda.stream[V]);
 
 		printf(", encoded\n");
 		fflush(stdout);

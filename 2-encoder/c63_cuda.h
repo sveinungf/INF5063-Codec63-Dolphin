@@ -1,10 +1,10 @@
 #ifndef C63_CUDA_H_
 #define C63_CUDA_H_
 
+#include "c63.h"
+
 struct c63_cuda {
-	cudaStream_t streamY;
-	cudaStream_t streamU;
-	cudaStream_t streamV;
+	cudaStream_t stream[COLOR_COMPONENTS];
 };
 
 struct c63_common_gpu {

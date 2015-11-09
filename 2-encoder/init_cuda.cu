@@ -4,18 +4,20 @@ struct c63_cuda init_c63_cuda()
 {
 	struct c63_cuda result;
 
-	cudaStreamCreate(&result.streamY);
-	cudaStreamCreate(&result.streamU);
-	cudaStreamCreate(&result.streamV);
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		cudaStreamCreate(&result.stream[i]);
+	}
 
 	return result;
 }
 
 void cleanup_c63_cuda(struct c63_cuda& c63_cuda)
 {
-	cudaStreamDestroy(c63_cuda.streamY);
-	cudaStreamDestroy(c63_cuda.streamU);
-	cudaStreamDestroy(c63_cuda.streamV);
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		cudaStreamDestroy(c63_cuda.stream[i]);
+	}
 }
 
 struct c63_common_gpu init_c63_gpu(struct c63_common* cm)

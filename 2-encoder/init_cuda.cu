@@ -20,11 +20,15 @@ void cleanup_c63_cuda(struct c63_cuda& c63_cuda)
 
 struct c63_common_gpu init_c63_gpu(struct c63_common* cm)
 {
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
 	struct c63_common_gpu result;
 
-	cudaMalloc(&result.sad_index_resultsY, cm->mb_colsY * cm->mb_rowsY * sizeof(unsigned int));
-	cudaMalloc(&result.sad_index_resultsU, cm->mb_colsU * cm->mb_rowsU * sizeof(unsigned int));
-	cudaMalloc(&result.sad_index_resultsV, cm->mb_colsV * cm->mb_rowsV * sizeof(unsigned int));
+	cudaMalloc(&result.sad_index_resultsY, cm->mb_cols[Y] * cm->mb_rows[Y] * sizeof(unsigned int));
+	cudaMalloc(&result.sad_index_resultsU, cm->mb_cols[U] * cm->mb_rows[U] * sizeof(unsigned int));
+	cudaMalloc(&result.sad_index_resultsV, cm->mb_cols[V] * cm->mb_rows[V] * sizeof(unsigned int));
 
 	return result;
 }

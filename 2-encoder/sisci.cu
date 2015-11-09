@@ -148,10 +148,14 @@ void cleanup_SISCI()
 
 
 void set_sizes_offsets(struct c63_common *cm) {
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
     keyframeSize = sizeof(int);
-    mbSizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
-    mbSizeU = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
-    mbSizeV = cm->mb_rowsV * cm->mb_colsV * sizeof(struct macroblock);
+    mbSizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+    mbSizeU = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
+    mbSizeV = cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
     residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
     residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
     residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);

@@ -20,6 +20,10 @@ extern "C" {
 #include "tables.h"
 }
 
+static const int Y = Y_COMPONENT;
+static const int U = U_COMPONENT;
+static const int V = V_COMPONENT;
+
 /* getopt */
 extern int optind;
 extern char *optarg;
@@ -123,20 +127,20 @@ struct c63_common* init_c63_enc(int width, int height, const struct c63_cuda& c6
 	cm->width = width;
 	cm->height = height;
 
-	cm->padw[Y_COMPONENT] = cm->ypw = (uint32_t) (ceil(width / 16.0f) * 16);
-	cm->padh[Y_COMPONENT] = cm->yph = (uint32_t) (ceil(height / 16.0f) * 16);
-	cm->padw[U_COMPONENT] = cm->upw = (uint32_t) (ceil(width * UX / (YX * 8.0f)) * 8);
-	cm->padh[U_COMPONENT] = cm->uph = (uint32_t) (ceil(height * UY / (YY * 8.0f)) * 8);
-	cm->padw[V_COMPONENT] = cm->vpw = (uint32_t) (ceil(width * VX / (YX * 8.0f)) * 8);
-	cm->padh[V_COMPONENT] = cm->vph = (uint32_t) (ceil(height * VY / (YY * 8.0f)) * 8);
+	cm->padw[Y] = cm->ypw = (uint32_t) (ceil(width / 16.0f) * 16);
+	cm->padh[Y] = cm->yph = (uint32_t) (ceil(height / 16.0f) * 16);
+	cm->padw[U] = cm->upw = (uint32_t) (ceil(width * UX / (YX * 8.0f)) * 8);
+	cm->padh[U] = cm->uph = (uint32_t) (ceil(height * UY / (YY * 8.0f)) * 8);
+	cm->padw[V] = cm->vpw = (uint32_t) (ceil(width * VX / (YX * 8.0f)) * 8);
+	cm->padh[V] = cm->vph = (uint32_t) (ceil(height * VY / (YY * 8.0f)) * 8);
 
-	cm->mb_colsY = cm->ypw / 8;
-	cm->mb_colsU = cm->mb_colsY / 2;
-	cm->mb_colsV = cm->mb_colsU;
+	cm->mb_cols[Y] = cm->ypw / 8;
+	cm->mb_cols[U] = cm->mb_cols[Y] / 2;
+	cm->mb_cols[V] = cm->mb_cols[U];
 
-	cm->mb_rowsY = cm->yph / 8;
-	cm->mb_rowsU = cm->mb_rowsY / 2;
-	cm->mb_rowsV = cm->mb_rowsU;
+	cm->mb_rows[Y] = cm->yph / 8;
+	cm->mb_rows[U] = cm->mb_rows[Y] / 2;
+	cm->mb_rows[V] = cm->mb_rows[U];
 
 	/* Quality parameters -- Home exam deliveries should have original values,
 	 i.e., quantization factor should be 25, search range should be 16, and the
@@ -148,9 +152,9 @@ struct c63_common* init_c63_enc(int width, int height, const struct c63_cuda& c6
 	/* Initialize quantization tables */
 	for (int i = 0; i < 64; ++i)
 	{
-		cm->quanttbl[Y_COMPONENT][i] = yquanttbl_def[i] / (cm->qp / 10.0);
-		cm->quanttbl[U_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
-		cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
+		cm->quanttbl[Y][i] = yquanttbl_def[i] / (cm->qp / 10.0);
+		cm->quanttbl[U][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
+		cm->quanttbl[V][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
 	}
 
 	init_boundaries(cm, c63_cuda);

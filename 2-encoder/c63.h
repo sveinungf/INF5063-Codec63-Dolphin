@@ -112,11 +112,11 @@ struct c63_common
   int width, height;
   int ypw, yph, upw, uph, vpw, vph;
 
-  int padw[COLOR_COMPONENTS], padh[COLOR_COMPONENTS];
+  int padw[COLOR_COMPONENTS];
+  int padh[COLOR_COMPONENTS];
 
-  int mb_colsY, mb_rowsY;
-  int mb_colsU, mb_rowsU;
-  int mb_colsV, mb_rowsV;
+  int mb_cols[COLOR_COMPONENTS];
+  int mb_rows[COLOR_COMPONENTS];
 
   uint8_t qp;                         // Quality parameter
 

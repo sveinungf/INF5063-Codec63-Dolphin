@@ -9,6 +9,9 @@
 
 #include "common.h"
 
+static const int Y = Y_COMPONENT;
+static const int U = U_COMPONENT;
+static const int V = V_COMPONENT;
 
 __device__
 static void dct_quant_block_8x8(float* in_data, float *out_data, int16_t __restrict__ *global_out, const uint8_t* __restrict__ quant_tbl, int i, const int j)
@@ -145,11 +148,11 @@ static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 	cudaMalloc((void**) &f->residuals_gpu->Udct, cm->upw * cm->uph * sizeof(int16_t));
 	cudaMalloc((void**) &f->residuals_gpu->Vdct, cm->vpw * cm->vph * sizeof(int16_t));
 
-	cudaMalloc((void**) &f->mbs_gpu[Y_COMPONENT], cm->mb_rowsY * cm->mb_colsY *
+	cudaMalloc((void**) &f->mbs_gpu[Y], cm->mb_rows[Y] * cm->mb_cols[Y] *
 			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[U_COMPONENT], cm->mb_rowsU * cm->mb_colsU *
+	cudaMalloc((void**) &f->mbs_gpu[U], cm->mb_rows[U] * cm->mb_cols[U] *
 			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[V_COMPONENT], cm->mb_rowsV * cm->mb_colsV *
+	cudaMalloc((void**) &f->mbs_gpu[V], cm->mb_rows[V] * cm->mb_cols[V] *
 			sizeof(struct macroblock));
 }
 
@@ -197,8 +200,8 @@ struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cud
 	cudaMallocHost((void**)&f->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t));
 	*/
 
-	size_t sizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
-	size_t sizeUV = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
+	size_t sizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+	size_t sizeUV = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
 	f->mbs[Y_COMPONENT] = create_mb(f->mbs[Y_COMPONENT], sizeY, c63_cuda.streamY);
 	f->mbs[U_COMPONENT] = create_mb(f->mbs[U_COMPONENT], sizeUV, c63_cuda.streamU);
 	f->mbs[V_COMPONENT] = create_mb(f->mbs[V_COMPONENT], sizeUV, c63_cuda.streamV);

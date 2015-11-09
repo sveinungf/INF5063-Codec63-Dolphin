@@ -340,31 +340,35 @@ void gpu_c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu&
 	struct boundaries* boundU = &cm->me_boundariesU;
 	struct boundaries* boundV = &cm->me_boundariesV;
 
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
 	/* Luma */
-	dim3 numBlocksY(cm->mb_colsY, cm->mb_rowsY);
+	dim3 numBlocksY(cm->mb_cols[Y], cm->mb_rows[Y]);
 	dim3 threadsPerBlockY(ME_RANGE_Y*2, ME_RANGE_Y/2);
 
-	cudaMemsetAsync(cm_gpu.sad_index_resultsY, 255, cm->mb_colsY*cm->mb_rowsY*sizeof(unsigned int), c63_cuda.streamY);
+	cudaMemsetAsync(cm_gpu.sad_index_resultsY, 255, cm->mb_cols[Y]*cm->mb_rows[Y]*sizeof(unsigned int), c63_cuda.streamY);
 	me_block_8x8_gpu_Y<ME_RANGE_Y><<<numBlocksY, threadsPerBlockY, 0, c63_cuda.streamY>>>(orig->Y, ref->Y, boundY->left, boundY->right, boundY->top, boundY->bottom, wY, cm_gpu.sad_index_resultsY);
-	set_motion_vectors<ME_RANGE_Y><<<cm->mb_colsY, cm->mb_rowsY, 0, c63_cuda.streamY>>>(mbs[Y_COMPONENT], boundY->left, boundY->top, cm_gpu.sad_index_resultsY);
-	cudaMemcpyAsync(cm->curframe->mbs[Y_COMPONENT], mbs[Y_COMPONENT], cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamY);
+	set_motion_vectors<ME_RANGE_Y><<<cm->mb_cols[Y], cm->mb_rows[Y], 0, c63_cuda.streamY>>>(mbs[Y_COMPONENT], boundY->left, boundY->top, cm_gpu.sad_index_resultsY);
+	cudaMemcpyAsync(cm->curframe->mbs[Y_COMPONENT], mbs[Y_COMPONENT], cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamY);
 
 	/* Chroma */
-	dim3 numBlocksU(cm->mb_colsU, cm->mb_rowsU);
+	dim3 numBlocksU(cm->mb_cols[U], cm->mb_rows[U]);
 	dim3 threadsPerBlockU(ME_RANGE_U*2, ME_RANGE_U*2);
 
-	cudaMemsetAsync(cm_gpu.sad_index_resultsU, 255, cm->mb_colsU*cm->mb_rowsU*sizeof(unsigned int), c63_cuda.streamU);
+	cudaMemsetAsync(cm_gpu.sad_index_resultsU, 255, cm->mb_cols[U]*cm->mb_rows[U]*sizeof(unsigned int), c63_cuda.streamU);
 	me_block_8x8_gpu_UV<ME_RANGE_U><<<numBlocksU, threadsPerBlockU, 0, c63_cuda.streamU>>>(orig->U, ref->U, boundU->left, boundU->right, boundU->top, boundU->bottom, wU, cm_gpu.sad_index_resultsU);
-	set_motion_vectors<ME_RANGE_U><<<cm->mb_colsU, cm->mb_rowsU, 0, c63_cuda.streamU>>>(mbs[U_COMPONENT], boundU->left, boundU->top, cm_gpu.sad_index_resultsU);
-	cudaMemcpyAsync(cm->curframe->mbs[U_COMPONENT], mbs[U_COMPONENT], cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamU);
+	set_motion_vectors<ME_RANGE_U><<<cm->mb_cols[U], cm->mb_rows[U], 0, c63_cuda.streamU>>>(mbs[U_COMPONENT], boundU->left, boundU->top, cm_gpu.sad_index_resultsU);
+	cudaMemcpyAsync(cm->curframe->mbs[U_COMPONENT], mbs[U_COMPONENT], cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamU);
 
-	dim3 numBlocksV(cm->mb_colsV, cm->mb_rowsV);
+	dim3 numBlocksV(cm->mb_cols[V], cm->mb_rows[V]);
 	dim3 threadsPerBlockV(ME_RANGE_V*2, ME_RANGE_V*2);
 
-	cudaMemsetAsync(cm_gpu.sad_index_resultsV, 255, cm->mb_colsV*cm->mb_rowsV*sizeof(unsigned int), c63_cuda.streamV);
+	cudaMemsetAsync(cm_gpu.sad_index_resultsV, 255, cm->mb_cols[V]*cm->mb_rows[V]*sizeof(unsigned int), c63_cuda.streamV);
 	me_block_8x8_gpu_UV<ME_RANGE_V><<<numBlocksV, threadsPerBlockV, 0, c63_cuda.streamV>>>(orig->V, ref->V, boundV->left, boundV->right, boundV->top, boundV->bottom, wV, cm_gpu.sad_index_resultsV);
-	set_motion_vectors<ME_RANGE_V><<<cm->mb_colsV, cm->mb_rowsV, 0, c63_cuda.streamV>>>(mbs[V_COMPONENT], boundV->left, boundV->top, cm_gpu.sad_index_resultsV);
-	cudaMemcpyAsync(cm->curframe->mbs[V_COMPONENT], mbs[V_COMPONENT], cm->mb_rowsV * cm->mb_colsV * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamV);
+	set_motion_vectors<ME_RANGE_V><<<cm->mb_cols[V], cm->mb_rows[V], 0, c63_cuda.streamV>>>(mbs[V_COMPONENT], boundV->left, boundV->top, cm_gpu.sad_index_resultsV);
+	cudaMemcpyAsync(cm->curframe->mbs[V_COMPONENT], mbs[V_COMPONENT], cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock), cudaMemcpyDeviceToHost, c63_cuda.streamV);
 }
 
 /* Motion compensation for 8x8 block */

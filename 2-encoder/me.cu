@@ -332,17 +332,17 @@ void gpu_c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu&
 
 	yuv_t* ref = cm->refframe->recons_gpu;
 
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
 	const int wY = cm->padw[Y_COMPONENT];
 	const int wU = cm->padw[U_COMPONENT];
 	const int wV = cm->padw[V_COMPONENT];
 
-	struct boundaries* boundY = &cm->me_boundariesY;
-	struct boundaries* boundU = &cm->me_boundariesU;
-	struct boundaries* boundV = &cm->me_boundariesV;
-
-	static const int Y = Y_COMPONENT;
-	static const int U = U_COMPONENT;
-	static const int V = V_COMPONENT;
+	struct boundaries* boundY = &cm->me_boundaries[Y];
+	struct boundaries* boundU = &cm->me_boundaries[U];
+	struct boundaries* boundV = &cm->me_boundaries[V];
 
 	/* Luma */
 	dim3 numBlocksY(cm->mb_cols[Y], cm->mb_rows[Y]);

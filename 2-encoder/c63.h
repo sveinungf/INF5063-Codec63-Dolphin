@@ -134,9 +134,7 @@ struct c63_common
 
   struct entropy_ctx e_ctx;
 
-  struct boundaries me_boundariesY;
-  struct boundaries me_boundariesU;
-  struct boundaries me_boundariesV;
+  struct boundaries me_boundaries[COLOR_COMPONENTS];
 };
 
 #endif  /* C63_C63_H_ */

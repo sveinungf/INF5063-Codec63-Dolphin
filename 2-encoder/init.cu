@@ -63,9 +63,9 @@ void init_boundaries(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 	boundaries[U] = init_me_boundaries(cm->upw, cm->uph, cm->mb_cols[U], cm->mb_rows[U], ME_RANGE_U);
 	boundaries[V] = init_me_boundaries(cm->vpw, cm->vph, cm->mb_cols[V], cm->mb_rows[V], ME_RANGE_V);
 
-	cm->me_boundariesY = init_me_boundaries_gpu(boundaries[Y], cm->mb_cols[Y], cm->mb_rows[Y], c63_cuda.streamY);
-	cm->me_boundariesU = init_me_boundaries_gpu(boundaries[U], cm->mb_cols[U], cm->mb_rows[U], c63_cuda.streamU);
-	cm->me_boundariesV = init_me_boundaries_gpu(boundaries[V], cm->mb_cols[V], cm->mb_rows[V], c63_cuda.streamV);
+	cm->me_boundaries[Y] = init_me_boundaries_gpu(boundaries[Y], cm->mb_cols[Y], cm->mb_rows[Y], c63_cuda.streamY);
+	cm->me_boundaries[U] = init_me_boundaries_gpu(boundaries[U], cm->mb_cols[U], cm->mb_rows[U], c63_cuda.streamU);
+	cm->me_boundaries[V] = init_me_boundaries_gpu(boundaries[V], cm->mb_cols[V], cm->mb_rows[V], c63_cuda.streamV);
 
 	cleanup_me_boundaries(&boundaries[Y]);
 	cleanup_me_boundaries(&boundaries[U]);
@@ -74,7 +74,8 @@ void init_boundaries(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 
 void cleanup_boundaries(struct c63_common* cm)
 {
-	cleanup_me_boundaries_gpu(cm->me_boundariesY);
-	cleanup_me_boundaries_gpu(cm->me_boundariesU);
-	cleanup_me_boundaries_gpu(cm->me_boundariesV);
+	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	{
+		cleanup_me_boundaries_gpu(cm->me_boundaries[i]);
+	}
 }

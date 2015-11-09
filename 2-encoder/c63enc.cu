@@ -64,7 +64,9 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		gpu_c63_motion_estimate(cm, cm_gpu, c63_cuda);
 
 		/* Motion Compensation */
-		gpu_c63_motion_compensate(cm, c63_cuda);
+		gpu_c63_motion_compensate<Y>(cm, c63_cuda);
+		gpu_c63_motion_compensate<U>(cm, c63_cuda);
+		gpu_c63_motion_compensate<V>(cm, c63_cuda);
 	}
 	else
 	{

@@ -393,20 +393,39 @@ static void mc_block_8x8_gpu(const struct macroblock* __restrict__ mbs, int w, u
 	predicted[block_offset + i * 8 + j] = ref[(i + blockIdx.y*8 + mv_y) * w + (j + blockIdx.x*8 + mv_x)];
 }
 
+template<int component>
 void gpu_c63_motion_compensate(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
-	struct macroblock** mbs = cm->curframe->mbs_gpu;
-	yuv_t* pred = cm->curframe->predicted_gpu;
-	yuv_t* ref = cm->refframe->recons_gpu;
+	const int w = cm->padw[component];
+	const int h = cm->padh[component];
+	const struct macroblock* mb = cm->curframe->mbs_gpu[component];
+	const cudaStream_t stream = c63_cuda.stream[component];
 
-	dim3 threadsPerBlock(8, 8);
-	const dim3 numBlocks_Y(cm->padw[Y_COMPONENT]/threadsPerBlock.x, cm->padh[Y_COMPONENT]/threadsPerBlock.y);
-	const dim3 numBlocks_UV(cm->padw[U_COMPONENT]/threadsPerBlock.x, cm->padh[U_COMPONENT]/threadsPerBlock.y);
+	uint8_t* pred;
+	uint8_t* ref;
 
-	/* Luma */
-	mc_block_8x8_gpu<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(mbs[Y_COMPONENT], cm->padw[Y_COMPONENT], pred->Y, ref->Y);
+	switch (component)
+	{
+		case Y_COMPONENT:
+			pred = cm->curframe->predicted_gpu->Y;
+			ref = cm->refframe->recons_gpu->Y;
+			break;
+		case U_COMPONENT:
+			pred = cm->curframe->predicted_gpu->U;
+			ref = cm->refframe->recons_gpu->U;
+			break;
+		case V_COMPONENT:
+			pred = cm->curframe->predicted_gpu->V;
+			ref = cm->refframe->recons_gpu->V;
+			break;
+	}
 
-	/* Chroma */
-	mc_block_8x8_gpu<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[U]>>>(mbs[U_COMPONENT], cm->padw[U_COMPONENT], pred->U, ref->U);
-	mc_block_8x8_gpu<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(mbs[V_COMPONENT], cm->padw[V_COMPONENT], pred->V, ref->V);
+	const dim3 threadsPerBlock(8, 8);
+	const dim3 numBlocks(w / threadsPerBlock.x, h / threadsPerBlock.y);
+
+	mc_block_8x8_gpu<<<numBlocks, threadsPerBlock, 0, stream>>>(mb, w, pred, ref);
 }
+
+template void gpu_c63_motion_compensate<Y>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
+template void gpu_c63_motion_compensate<U>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
+template void gpu_c63_motion_compensate<V>(struct c63_common *cm, const struct c63_cuda& c63_cuda);

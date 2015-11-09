@@ -1,5 +1,5 @@
 #include "init.h"
-#include "init_cuda.h"
+
 
 static struct boundaries init_me_boundaries(int w, int h, int cols, int rows, int range)
 {

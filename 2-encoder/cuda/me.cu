@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../common/sisci_common.h"
+#include "../../common/sisci_common.h"
 #include "c63_cuda.h"
 #include "me.h"
 

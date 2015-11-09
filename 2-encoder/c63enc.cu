@@ -9,11 +9,11 @@
 #include <string.h>
 #include <utility>
 
+#include "cuda/init_cuda.h"
+#include "cuda/me.h"
 #include "c63.h"
 #include "common.h"
 #include "init.h"
-#include "init_cuda.h"
-#include "me.h"
 #include "sisci.h"
 
 extern "C" {

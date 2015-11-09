@@ -6,6 +6,8 @@
 #define SCI_NO_FLAGS        0
 #define SCI_NO_CALLBACK     NULL
 
+#define NUM_IMAGE_SEGMENTS 2
+
 // Signals
 typedef enum {
 	IMAGE_TRANSFERRED,

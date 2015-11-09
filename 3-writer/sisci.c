@@ -6,17 +6,17 @@
 
 
 // SISCI variables
-static sci_desc_t sds[2];
+static sci_desc_t sds[NUM_IMAGE_SEGMENTS];
 
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
 static unsigned int encoderNodeId;
 
-static sci_local_segment_t localSegments[2];
-static sci_map_t localMaps[2];
+static sci_local_segment_t localSegments[NUM_IMAGE_SEGMENTS];
+static sci_map_t localMaps[NUM_IMAGE_SEGMENTS];
 
-static sci_local_data_interrupt_t interruptFromEncoder;
-static sci_remote_interrupt_t interruptToEncoder;
+static sci_local_data_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
+static sci_remote_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 
 static unsigned int interruptFromEncoderNo;
 
@@ -32,7 +32,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 
 	// Initialize descriptors
 	int i;
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		SCIOpen(&sds[i], SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
@@ -41,14 +41,21 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	sisci_assert(error);
 
 	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
-	interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED;
-	SCICreateDataInterrupt(sds[0], &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED + i;
+		SCICreateDataInterrupt(sds[i], &interruptsFromEncoder[i], localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
+		sisci_assert(error);
+	}
 
-	// Connect reader node to remote interrupt at processing machine
-	do {
-		SCIConnectInterrupt(sds[0], &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
+	// Connect writer node to remote interrupt at processing machine
+	printf("Connecting to interrupt on encoder... ");
+	fflush(stdout);
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		do {
+			SCIConnectInterrupt(sds[i], &interruptsToEncoder[i], encoderNodeId, localAdapterNo, DATA_WRITTEN + i, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		} while (error != SCI_ERR_OK);
+	}
+	printf("Done!\n");
 }
 
 
@@ -58,7 +65,7 @@ void receive_width_and_height(uint32_t *width, uint32_t *height) {
 	unsigned int length = 2*sizeof(uint32_t);
 
 	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptFromEncoder, &widthAndHeight, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	SCIWaitForDataInterrupt(interruptsFromEncoder[0], &widthAndHeight, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	*width = widthAndHeight[0];
@@ -93,28 +100,29 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	return local_buffer;
 }
 
-void wait_for_encoder(uint8_t *done, unsigned int *length) {
+void wait_for_encoder(uint8_t *done, unsigned int *length, int segNum) {
 	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptFromEncoder, done, length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	SCIWaitForDataInterrupt(interruptsFromEncoder[segNum], done, length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
 
-void signal_encoder() {
+void signal_encoder(int segNum) {
 	sci_error_t error;
-	SCITriggerInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
+	SCITriggerInterrupt(interruptsToEncoder[segNum], SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
 
 void cleanup_SISCI() {
 	sci_error_t error;
-	SCIDisconnectInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
-	SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
-	sisci_check(error);
 
 	int i;
-	for (i = 0; i < 2; ++i) {
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		SCIDisconnectInterrupt(interruptsToEncoder[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
+		SCIRemoveDataInterrupt(interruptsFromEncoder[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
 		SCIUnmapSegment(localMaps[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 

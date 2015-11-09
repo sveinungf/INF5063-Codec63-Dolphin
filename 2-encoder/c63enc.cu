@@ -161,7 +161,7 @@ struct c63_common* init_c63_enc(int width, int height, const struct c63_cuda& c6
 		cm->quanttbl[V][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
 	}
 
-	init_boundaries(cm, c63_cuda);
+	init_me_boundaries(cm);
 
 	cm->curframe = create_frame(cm, c63_cuda);
 	cm->refframe = create_frame(cm, c63_cuda);
@@ -171,7 +171,7 @@ struct c63_common* init_c63_enc(int width, int height, const struct c63_cuda& c6
 
 void free_c63_enc(struct c63_common* cm)
 {
-	cleanup_boundaries(cm);
+	cleanup_me_boundaries(cm);
 
 	destroy_frame(cm->curframe);
 	destroy_frame(cm->refframe);
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
 
 	struct c63_cuda c63_cuda = init_c63_cuda();
 	struct c63_common *cm = init_c63_enc(width, height, c63_cuda);
-	struct c63_common_gpu cm_gpu = init_c63_gpu(cm);
+	struct c63_common_gpu cm_gpu = init_c63_gpu(cm, c63_cuda);
 
 	set_sizes_offsets(cm);
 
@@ -316,8 +316,9 @@ int main(int argc, char **argv)
 
 	//destroy_image_gpu(image_gpu);
 
-	cleanup_c63_cuda(c63_cuda);
+	cleanup_c63_gpu(cm_gpu);
 	free_c63_enc(cm);
+	cleanup_c63_cuda(c63_cuda);
 
 	cleanup_segments();
 	cleanup_SISCI();

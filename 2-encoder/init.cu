@@ -49,32 +49,31 @@ static struct boundaries init_me_boundaries(int w, int h, int cols, int rows, in
 	return boundaries;
 }
 
-static void cleanup_me_boundaries(struct boundaries* boundaries)
+static void cleanup_me_boundaries(struct boundaries& boundaries)
 {
-	delete[] boundaries->left;
-	delete[] boundaries->right;
-	delete[] boundaries->top;
-	delete[] boundaries->bottom;
+	delete[] boundaries.left;
+	delete[] boundaries.right;
+	delete[] boundaries.top;
+	delete[] boundaries.bottom;
 }
 
-void init_boundaries(struct c63_common* cm, const struct c63_cuda& c63_cuda)
+void init_me_boundaries(struct c63_common* cm)
 {
 	for (int i = 0; i < COLOR_COMPONENTS; ++i)
 	{
+		int w = cm->padw[i];
+		int h = cm->padh[i];
 		int cols = cm->mb_cols[i];
 		int rows = cm->mb_rows[i];
 
-		struct boundaries boundaries = init_me_boundaries(cm->padw[i], cm->padh[i], cols, rows,
-				ME_RANGE(i));
-		cm->me_boundaries[i] = init_me_boundaries_gpu(boundaries, cols, rows, c63_cuda.stream[i]);
-		cleanup_me_boundaries(&boundaries);
+		cm->me_boundaries[i] = init_me_boundaries(w, h, cols, rows,	ME_RANGE(i));
 	}
 }
 
-void cleanup_boundaries(struct c63_common* cm)
+void cleanup_me_boundaries(struct c63_common* cm)
 {
 	for (int i = 0; i < COLOR_COMPONENTS; ++i)
 	{
-		cleanup_me_boundaries_gpu(cm->me_boundaries[i]);
+		cleanup_me_boundaries(cm->me_boundaries[i]);
 	}
 }

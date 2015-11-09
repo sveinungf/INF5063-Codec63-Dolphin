@@ -7,11 +7,7 @@
 struct c63_cuda init_c63_cuda();
 void cleanup_c63_cuda(struct c63_cuda& c63_cuda);
 
-struct c63_common_gpu init_c63_gpu(struct c63_common* cm);
+struct c63_common_gpu init_c63_gpu(const struct c63_common* cm, const struct c63_cuda& c63_cuda);
 void cleanup_c63_gpu(struct c63_common_gpu& cm_gpu);
-
-struct boundaries init_me_boundaries_gpu(const struct boundaries& indata, int cols, int rows,
-		cudaStream_t stream);
-void cleanup_me_boundaries_gpu(struct boundaries& boundaries_gpu);
 
 #endif /* INIT_CUDA_H_ */

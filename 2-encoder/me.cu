@@ -330,7 +330,7 @@ void gpu_c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu&
 	const int cols = cm->mb_cols[component];
 	const int rows = cm->mb_rows[component];
 	const int range = ME_RANGE(component);
-	const struct boundaries& bound = cm->me_boundaries[component];
+	const struct boundaries& bound = cm_gpu.me_boundaries[component];
 	const cudaStream_t stream = c63_cuda.stream[component];
 
 	unsigned int* sad_indexes = cm_gpu.sad_index_results[component];

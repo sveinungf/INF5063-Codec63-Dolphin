@@ -8,6 +8,7 @@ struct c63_cuda {
 };
 
 struct c63_common_gpu {
+	struct boundaries me_boundaries[COLOR_COMPONENTS];
 	unsigned int* sad_index_results[COLOR_COMPONENTS];
 };
 

@@ -3,7 +3,7 @@
 
 #include "c63.h"
 
-void init_me_boundaries(struct c63_common* cm);
-void cleanup_me_boundaries(struct c63_common* cm);
+struct c63_common* init_c63_common(int width, int height, const struct c63_cuda& c63_cuda);
+void cleanup_c63_common(struct c63_common* cm);
 
 #endif /* INIT_H_ */

@@ -12,12 +12,12 @@
 
 #include "me.h"
 
-
 /*
  * Calculates SAD values comparing one 8x8 block in the current frame to 8x8 blocks
  * from 8 sequential starting points in the previous frame.
  */
-static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, int stride, __m128i* const result)
+static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, int stride,
+		__m128i* const result)
 {
 	/*
 	 * Loads the first row from the blocks in the previous frame starting
@@ -61,7 +61,8 @@ static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, i
  * Calculates SAD values comparing TWO 8x8 blocks in the current frame to 8x8 blocks
  * from 8 sequential starting points in the previous frame.
  */
-static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref, int stride, __m128i* const result1, __m128i* const result2)
+static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref, int stride,
+		__m128i* const result1, __m128i* const result2)
 {
 	__m128i ref_pixels = _mm_loadu_si128((void const*)(ref));
 	__m128i orig_pixels = _mm_loadu_si128((void const*)(orig));
@@ -99,7 +100,8 @@ static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref,
  * multiple macroblocks with the same lowest SAD value, the one with the lowest index
  * will be used.
  */
-static void get_sad_index(const __m128i min_values, const __m128i min_indexes, int* sad_index_x, int* sad_index_y, int index_vector_row_length)
+static void get_sad_index(const __m128i min_values, const __m128i min_indexes, int* sad_index_x,
+		int* sad_index_y, int index_vector_row_length)
 {
 	uint16_t values[8] __attribute__((aligned(16)));
 	uint16_t indexes[8] __attribute__((aligned(16)));
@@ -132,7 +134,8 @@ static void get_sad_index(const __m128i min_values, const __m128i min_indexes, i
 }
 
 /* Motion estimation for two horizontally sequential 8x8 blocks */
-static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *orig, uint8_t *ref, int color_component)
+static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *orig, uint8_t *ref,
+		int color_component)
 {
 	int mb_index = mb_y * cm->padw[color_component] / 8 + mb1_x;
 
@@ -301,12 +304,14 @@ static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *
 	 * Now we have 8 SAD values and their corresponding indexes. get_sad_index() finds the
 	 * x and y values for the first macroblock with the lowest SAD value.
 	 */
-	get_sad_index(sad_min_values_block1, sad_min_indexes_block1, &sad_index_x, &sad_index_y, index_vector_row_length);
+	get_sad_index(sad_min_values_block1, sad_min_indexes_block1, &sad_index_x, &sad_index_y,
+			index_vector_row_length);
 	mb1->mv_x = normalized_left + sad_index_x - m1x;
 	mb1->mv_y = top + sad_index_y - my;
 	mb1->use_mv = 1;
 
-	get_sad_index(sad_min_values_block2, sad_min_indexes_block2, &sad_index_x, &sad_index_y, index_vector_row_length);
+	get_sad_index(sad_min_values_block2, sad_min_indexes_block2, &sad_index_x, &sad_index_y,
+			index_vector_row_length);
 	mb2->mv_x = normalized_left + sad_index_x - m2x;
 	mb2->mv_y = top + sad_index_y - my;
 	mb2->use_mv = 1;
@@ -347,9 +352,11 @@ void c63_motion_estimate(struct c63_common *cm, int component)
 }
 
 /* Motion compensation for 8x8 block */
-static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted, uint8_t *ref, int color_component)
+static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted,
+		uint8_t *ref, int color_component)
 {
-	struct macroblock *mb = &cm->curframe->mbs[color_component][mb_y * cm->padw[color_component] / 8 + mb_x];
+	struct macroblock *mb = &cm->curframe->mbs[color_component][mb_y * cm->padw[color_component] / 8
+			+ mb_x];
 
 	if (!mb->use_mv)
 	{

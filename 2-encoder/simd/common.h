@@ -3,7 +3,7 @@
 
 #include <inttypes.h>
 
-#include "c63.h"
+#include "../c63.h"
 
 // Declarations
 struct frame* create_frame(struct c63_common *cm, yuv_t *image);

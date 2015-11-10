@@ -7,8 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "zimd_common.h"
-#include "zimd_dsp.h"
+#include "common.h"
+#include "dsp.h"
+
+static const int Y = Y_COMPONENT;
+static const int U = U_COMPONENT;
+static const int V = V_COMPONENT;
+
 
 void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, int h,
     int y, uint8_t *out_data, uint8_t *quantization)
@@ -97,20 +102,20 @@ void destroy_frame(struct frame *f)
   /* First frame doesn't have a reconstructed frame to destroy */
   if (!f) { return; }
 
-  free(f->recons_simd->Y);
-  free(f->recons_simd->U);
-  free(f->recons_simd->V);
-  free(f->recons_simd);
+  free(f->recons->Y);
+  free(f->recons->U);
+  free(f->recons->V);
+  free(f->recons);
 
   free(f->residuals->Ydct);
   free(f->residuals->Udct);
   free(f->residuals->Vdct);
   free(f->residuals);
 
-  free(f->predicted_simd->Y);
-  free(f->predicted_simd->U);
-  free(f->predicted_simd->V);
-  free(f->predicted_simd);
+  free(f->predicted->Y);
+  free(f->predicted->U);
+  free(f->predicted->V);
+  free(f->predicted);
 
   free(f->mbs[Y_COMPONENT]);
   free(f->mbs[U_COMPONENT]);
@@ -123,29 +128,29 @@ struct frame* create_frame(struct c63_common *cm, yuv_t *image)
 {
   struct frame *f = malloc(sizeof(struct frame));
 
-  f->orig_simd = image;
+  f->orig = image;
 
-  f->recons_simd = malloc(sizeof(yuv_t));
-  f->recons_simd->Y = malloc(cm->ypw * cm->yph);
-  f->recons_simd->U = malloc(cm->upw * cm->uph);
-  f->recons_simd->V = malloc(cm->vpw * cm->vph);
+  f->recons = malloc(sizeof(yuv_t));
+  f->recons->Y = malloc(cm->ypw * cm->yph);
+  f->recons->U = malloc(cm->upw * cm->uph);
+  f->recons->V = malloc(cm->vpw * cm->vph);
 
-  f->predicted_simd = malloc(sizeof(yuv_t));
-  f->predicted_simd->Y = calloc(cm->ypw * cm->yph, sizeof(uint8_t));
-  f->predicted_simd->U = calloc(cm->upw * cm->uph, sizeof(uint8_t));
-  f->predicted_simd->V = calloc(cm->vpw * cm->vph, sizeof(uint8_t));
+  f->predicted = malloc(sizeof(yuv_t));
+  f->predicted->Y = calloc(cm->ypw * cm->yph, sizeof(uint8_t));
+  f->predicted->U = calloc(cm->upw * cm->uph, sizeof(uint8_t));
+  f->predicted->V = calloc(cm->vpw * cm->vph, sizeof(uint8_t));
 
   f->residuals = malloc(sizeof(dct_t));
   f->residuals->Ydct = calloc(cm->ypw * cm->yph, sizeof(int16_t));
   f->residuals->Udct = calloc(cm->upw * cm->uph, sizeof(int16_t));
   f->residuals->Vdct = calloc(cm->vpw * cm->vph, sizeof(int16_t));
 
-  f->mbs[Y_COMPONENT] =
-    calloc(cm->mb_rowsY * cm->mb_colsY, sizeof(struct macroblock));
-  f->mbs[U_COMPONENT] =
-    calloc(cm->mb_rowsUV * cm->mb_colsUV, sizeof(struct macroblock));
-  f->mbs[V_COMPONENT] =
-    calloc(cm->mb_rowsUV * cm->mb_colsUV, sizeof(struct macroblock));
+  f->mbs[Y] =
+    calloc(cm->mb_rows[Y] * cm->mb_cols[Y], sizeof(struct macroblock));
+  f->mbs[U] =
+    calloc(cm->mb_rows[U] * cm->mb_cols[U], sizeof(struct macroblock));
+  f->mbs[V] =
+    calloc(cm->mb_rows[V] * cm->mb_cols[V], sizeof(struct macroblock));
 
   return f;
 }

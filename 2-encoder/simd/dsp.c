@@ -1,13 +1,13 @@
+#include <immintrin.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "zimd_dsp.h"
-#include "tables.h"
+#include "../tables.h"
+#include "dsp.h"
 
-#include <immintrin.h>
 
 static void transpose_block(float *in_data, float *out_data)
 {

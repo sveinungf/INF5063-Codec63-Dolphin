@@ -70,7 +70,7 @@ all: c63enc
 	
 OBJECTS_ROOT = allocation.o c63enc.o common.o init.o sisci.o tables.o
 OBJECTS_CUDA = init_cuda.o me.o
-OBJECTS_SIMD = me.o
+OBJECTS_SIMD = common.o dsp.o me.o
 
 ALL_OBJECTS = $(OBJECTS_ROOT)
 ALL_OBJECTS += $(addprefix cuda/,$(OBJECTS_CUDA))

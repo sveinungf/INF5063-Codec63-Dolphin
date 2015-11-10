@@ -1,6 +1,6 @@
 #include "../common/sisci_common.h"
 #include "allocation.h"
-#include "common.h"
+#include "cuda/common.h"
 #include "cuda/me.h"
 
 extern "C" {

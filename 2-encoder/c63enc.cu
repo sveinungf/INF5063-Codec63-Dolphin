@@ -9,18 +9,18 @@
 #include <string.h>
 #include <utility>
 
-#include "cuda/init_cuda.h"
-#include "cuda/me.h"
 #include "allocation.h"
 #include "c63.h"
-#include "common.h"
 #include "init.h"
 #include "sisci.h"
+#include "cuda/common.h"
+#include "cuda/init_cuda.h"
+#include "cuda/me.h"
 
 extern "C" {
+#include "tables.h"
 #include "simd/common.h"
 #include "simd/me.h"
-#include "tables.h"
 }
 
 

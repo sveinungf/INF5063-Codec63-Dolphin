@@ -3,8 +3,9 @@
 
 #include <inttypes.h>
 
-#include "cuda/c63_cuda.h"
-#include "c63.h"
+#include "../c63.h"
+#include "c63_cuda.h"
+
 
 __constant__ uint8_t quant_table[192] =
 {

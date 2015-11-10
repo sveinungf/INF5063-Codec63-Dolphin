@@ -68,8 +68,8 @@ all: c63enc
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 	
-OBJECTS_ROOT = allocation.o c63enc.o common.o init.o sisci.o tables.o
-OBJECTS_CUDA = init_cuda.o me.o
+OBJECTS_ROOT = allocation.o c63enc.o init.o sisci.o tables.o
+OBJECTS_CUDA = common.o init_cuda.o me.o
 OBJECTS_SIMD = common.o dsp.o me.o
 
 ALL_OBJECTS = $(OBJECTS_ROOT)

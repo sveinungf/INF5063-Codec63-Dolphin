@@ -50,13 +50,13 @@ static inline void zero_out_prediction_host(struct c63_common* cm)
 	switch (component)
 	{
 		case Y_COMPONENT:
-			predicted = cm->curframe->predicted_gpu->Y;
+			predicted = cm->curframe->predicted->Y;
 			break;
 		case U_COMPONENT:
-			predicted = cm->curframe->predicted_gpu->U;
+			predicted = cm->curframe->predicted->U;
 			break;
 		case V_COMPONENT:
-			predicted = cm->curframe->predicted_gpu->V;
+			predicted = cm->curframe->predicted->V;
 			break;
 	}
 

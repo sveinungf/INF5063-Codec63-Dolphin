@@ -1,5 +1,5 @@
-#ifndef C63_COMMON_H_
-#define C63_COMMON_H_
+#ifndef C63_COMMON_CUDA_H_
+#define C63_COMMON_CUDA_H_
 
 #include <inttypes.h>
 
@@ -99,7 +99,4 @@ void destroy_image_gpu(yuv_t* image);
 
 void dump_image(yuv_t *image, int w, int h, FILE *fp);
 
-void cuda_init(struct c63_common cm);
-void cuda_cleanup();
-
-#endif  /* C63_COMMON_H_ */
+#endif  /* C63_COMMON_CUDA_H_ */

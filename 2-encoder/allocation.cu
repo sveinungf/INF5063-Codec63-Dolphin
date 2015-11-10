@@ -15,6 +15,55 @@ static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
 
 template<int component>
+static inline void zero_out_prediction_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
+{
+	const int w = cm->padw[component];
+	const int h = cm->padh[component];
+	const cudaStream_t stream = c63_cuda.stream[component];
+
+	uint8_t* predicted;
+
+	switch (component)
+	{
+		case Y_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->Y;
+			break;
+		case U_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->U;
+			break;
+		case V_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->V;
+			break;
+	}
+
+	cudaMemsetAsync(predicted, 0, w * h * sizeof(uint8_t), stream);
+}
+
+template<int component>
+static inline void zero_out_prediction_host(struct c63_common* cm)
+{
+	const int w = cm->padw[component];
+	const int h = cm->padh[component];
+
+	uint8_t* predicted;
+
+	switch (component)
+	{
+		case Y_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->Y;
+			break;
+		case U_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->U;
+			break;
+		case V_COMPONENT:
+			predicted = cm->curframe->predicted_gpu->V;
+			break;
+	}
+
+	memset(predicted, 0, w * h * sizeof(uint8_t));
+}
+
+template<int component>
 static inline void dct_quantize_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 {
 	const int w = cm->padw[component];
@@ -214,6 +263,32 @@ void c63_motion_compensate_host(struct c63_common* cm)
 #endif
 #if !(V_ON_GPU)
 	c63_motion_compensate(cm, V);
+#endif
+}
+
+void zero_out_prediction_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
+{
+#if Y_ON_GPU
+	zero_out_prediction_gpu<Y>(cm, c63_cuda);
+#endif
+#if U_ON_GPU
+	zero_out_prediction_gpu<U>(cm, c63_cuda);
+#endif
+#if V_ON_GPU
+	zero_out_prediction_gpu<V>(cm, c63_cuda);
+#endif
+}
+
+void zero_out_prediction_host(struct c63_common* cm)
+{
+#if !(Y_ON_GPU)
+	zero_out_prediction_host<Y>(cm);
+#endif
+#if !(U_ON_GPU)
+	zero_out_prediction_host<U>(cm);
+#endif
+#if !(V_ON_GPU)
+	zero_out_prediction_host<V>(cm);
 #endif
 }
 

@@ -23,6 +23,7 @@ extern "C" {
 #include "tables.h"
 }
 
+
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -30,17 +31,6 @@ static const int V = V_COMPONENT;
 /* getopt */
 extern int optind;
 extern char *optarg;
-
-static void zero_out_prediction(struct c63_common* cm, const struct c63_cuda& c63_cuda)
-{
-	struct frame* frame = cm->curframe;
-	cudaMemsetAsync(frame->predicted_gpu->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t),
-			c63_cuda.stream[Y]);
-	cudaMemsetAsync(frame->predicted_gpu->U, 0, cm->upw * cm->uph * sizeof(uint8_t),
-			c63_cuda.stream[U]);
-	cudaMemsetAsync(frame->predicted_gpu->V, 0, cm->vpw * cm->vph * sizeof(uint8_t),
-			c63_cuda.stream[V]);
-}
 
 static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
 		const struct c63_cuda& c63_cuda, struct segment_yuv* image_gpu)
@@ -79,12 +69,8 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 	{
 		// dct_quantize() expects zeroed out prediction buffers for key frames.
 		// We zero them out here since we reuse the buffers from previous frames.
-		zero_out_prediction(cm, c63_cuda);
-
-		yuv_t* predicted = cm->curframe->predicted;
-		memset(predicted->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t));
-		memset(predicted->U, 0, cm->upw * cm->uph * sizeof(uint8_t));
-		memset(predicted->V, 0, cm->vpw * cm->vph * sizeof(uint8_t));
+		zero_out_prediction_gpu(cm, c63_cuda);
+		zero_out_prediction_host(cm);
 	}
 
 	/* DCT and Quantization */

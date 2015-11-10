@@ -18,6 +18,7 @@
 #include "sisci.h"
 
 extern "C" {
+#include "simd/common.h"
 #include "simd/me.h"
 #include "tables.h"
 }
@@ -60,6 +61,10 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		cm->curframe->keyframe = 0;
 	}
 
+	cudaMemcpy(cm->curframe->orig->Y, (void*) cm->curframe->orig_gpu->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(cm->curframe->orig->U, (void*) cm->curframe->orig_gpu->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(cm->curframe->orig->V, (void*) cm->curframe->orig_gpu->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+
 	if (!cm->curframe->keyframe)
 	{
 		/* Motion Estimation */
@@ -67,15 +72,24 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		c63_motion_estimate_host(cm);
 
 		/* Motion Compensation */
-		gpu_c63_motion_compensate<Y>(cm, c63_cuda);
-		gpu_c63_motion_compensate<U>(cm, c63_cuda);
-		gpu_c63_motion_compensate<V>(cm, c63_cuda);
+		//gpu_c63_motion_compensate<Y>(cm, c63_cuda);
+		//gpu_c63_motion_compensate<U>(cm, c63_cuda);
+		//gpu_c63_motion_compensate<V>(cm, c63_cuda);
+
+		c63_motion_compensate(cm, Y_COMPONENT);
+		c63_motion_compensate(cm, U_COMPONENT);
+		c63_motion_compensate(cm, V_COMPONENT);
 	}
 	else
 	{
 		// dct_quantize() expects zeroed out prediction buffers for key frames.
 		// We zero them out here since we reuse the buffers from previous frames.
 		zero_out_prediction(cm, c63_cuda);
+
+		yuv_t* predicted = cm->curframe->predicted;
+		memset(predicted->Y, 0, cm->ypw * cm->yph * sizeof(uint8_t));
+		memset(predicted->U, 0, cm->upw * cm->uph * sizeof(uint8_t));
+		memset(predicted->V, 0, cm->vpw * cm->vph * sizeof(uint8_t));
 	}
 
 	yuv_t* predicted = cm->curframe->predicted_gpu;
@@ -89,6 +103,7 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 			cm->padh[U_COMPONENT] / threadsPerBlock.y);
 
 	/* DCT and Quantization */
+	/*
 	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(
 			(const uint8_t*) cm->curframe->orig_gpu->Y, predicted->Y, cm->padw[Y_COMPONENT],
 			residuals->Ydct, Y_COMPONENT);
@@ -109,8 +124,22 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct,
 			cm->padw[V_COMPONENT] * cm->padh[V_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
 			c63_cuda.stream[V]);
+	//*/
+
+	dct_quantize_host(cm->curframe->orig->Y, cm->curframe->predicted->Y, cm->padw[Y_COMPONENT],
+	      cm->padh[Y_COMPONENT], cm->curframe->residuals->Ydct,
+	      cm->quanttbl[Y_COMPONENT]);
+
+	dct_quantize_host(cm->curframe->orig->U, cm->curframe->predicted->U, cm->padw[U_COMPONENT],
+	      cm->padh[U_COMPONENT], cm->curframe->residuals->Udct,
+	      cm->quanttbl[U_COMPONENT]);
+
+	dct_quantize_host(cm->curframe->orig->V, cm->curframe->predicted->V, cm->padw[V_COMPONENT],
+	      cm->padh[V_COMPONENT], cm->curframe->residuals->Vdct,
+	      cm->quanttbl[V_COMPONENT]);
 
 	/* Reconstruct frame for inter-prediction */
+	/*
 	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(residuals->Ydct,
 			predicted->Y, cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
 
@@ -119,6 +148,14 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 
 	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(residuals->Vdct,
 			predicted->V, cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
+	//*/
+
+	dequantize_idct_host(cm->curframe->residuals->Ydct, cm->curframe->predicted->Y,
+	      cm->ypw, cm->yph, cm->curframe->recons->Y, cm->quanttbl[Y_COMPONENT]);
+	dequantize_idct_host(cm->curframe->residuals->Udct, cm->curframe->predicted->U,
+	      cm->upw, cm->uph, cm->curframe->recons->U, cm->quanttbl[U_COMPONENT]);
+	dequantize_idct_host(cm->curframe->residuals->Vdct, cm->curframe->predicted->V,
+	      cm->vpw, cm->vph, cm->curframe->recons->V, cm->quanttbl[V_COMPONENT]);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the
 	 prediction is correct */

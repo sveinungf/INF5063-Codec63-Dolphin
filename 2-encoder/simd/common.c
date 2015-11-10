@@ -51,7 +51,7 @@ void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, int h, in
 	}
 }
 
-void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
+void dequantize_idct_host(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		uint8_t *out_data, uint8_t *quantization)
 {
 	int y;
@@ -90,7 +90,7 @@ void dct_quantize_row(uint8_t *in_data, uint8_t *prediction, int w, int h, int16
 	}
 }
 
-void dct_quantize(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
+void dct_quantize_host(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		int16_t *out_data, uint8_t *quantization)
 {
 	int y;
@@ -101,10 +101,10 @@ void dct_quantize(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_
 				out_data + y * width, quantization);
 	}
 }
-
+/*
 void destroy_frame(struct frame *f)
 {
-	/* First frame doesn't have a reconstructed frame to destroy */
+	// First frame doesn't have a reconstructed frame to destroy
 	if (!f)
 	{
 		return;
@@ -166,3 +166,4 @@ void dump_image(yuv_t *image, int w, int h, FILE *fp)
 	fwrite(image->U, 1, w * h / 4, fp);
 	fwrite(image->V, 1, w * h / 4, fp);
 }
+*/

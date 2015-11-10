@@ -47,12 +47,12 @@ static void c63_motion_estimate_host(struct c63_common* cm)
 			break;
 	}
 
-	cudaMemcpy(orig, orig_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(recons, recons_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(orig, orig_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	//cudaMemcpy(recons, recons_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
 
 	c63_motion_estimate(cm, component);
 
-	cudaMemcpy(mb_gpu, mb, cols * rows * sizeof(struct macroblock), cudaMemcpyHostToDevice);
+	//cudaMemcpy(mb_gpu, mb, cols * rows * sizeof(struct macroblock), cudaMemcpyHostToDevice);
 }
 
 void c63_motion_estimate_gpu(struct c63_common* cm, const struct c63_common_gpu& cm_gpu,

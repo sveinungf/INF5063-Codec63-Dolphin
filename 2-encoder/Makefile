@@ -67,8 +67,16 @@ all: c63enc
 	$(CC) $(CCFLAGS) -c $< -o $@
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
+	
+OBJECTS_ROOT = allocation.o c63enc.o common.o init.o sisci.o tables.o
+OBJECTS_CUDA = init_cuda.o me.o
+OBJECTS_SIMD = me.o
 
-c63enc: c63enc.o cuda/init_cuda.o cuda/me.o simd/me.o allocation.o init.o tables.o common.o sisci.o
+ALL_OBJECTS = $(OBJECTS_ROOT)
+ALL_OBJECTS += $(addprefix cuda/,$(OBJECTS_CUDA))
+ALL_OBJECTS += $(addprefix simd/,$(OBJECTS_SIMD))   
+
+c63enc: $(ALL_OBJECTS)
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:

@@ -72,10 +72,7 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		c63_motion_estimate_host(cm);
 
 		/* Motion Compensation */
-		//gpu_c63_motion_compensate<Y>(cm, c63_cuda);
-		//gpu_c63_motion_compensate<U>(cm, c63_cuda);
-		//gpu_c63_motion_compensate<V>(cm, c63_cuda);
-
+		c63_motion_compensate_gpu(cm, c63_cuda);
 		c63_motion_compensate_host(cm);
 	}
 	else
@@ -90,54 +87,12 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		memset(predicted->V, 0, cm->vpw * cm->vph * sizeof(uint8_t));
 	}
 
-	yuv_t* predicted = cm->curframe->predicted_gpu;
-	dct_t* residuals = cm->curframe->residuals_gpu;
-
-	const dim3 threadsPerBlock(8, 8);
-
-	const dim3 numBlocks_Y(cm->padw[Y_COMPONENT] / threadsPerBlock.x,
-			cm->padh[Y_COMPONENT] / threadsPerBlock.y);
-	const dim3 numBlocks_UV(cm->padw[U_COMPONENT] / threadsPerBlock.x,
-			cm->padh[U_COMPONENT] / threadsPerBlock.y);
-
 	/* DCT and Quantization */
-	/*
-	dct_quantize<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(
-			(const uint8_t*) cm->curframe->orig_gpu->Y, predicted->Y, cm->padw[Y_COMPONENT],
-			residuals->Ydct, Y_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Ydct, residuals->Ydct,
-			cm->padw[Y_COMPONENT] * cm->padh[Y_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.stream[Y]);
-
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[U]>>>(
-			(const uint8_t*) cm->curframe->orig_gpu->U, predicted->U, cm->padw[U_COMPONENT],
-			residuals->Udct, U_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Udct, residuals->Udct,
-			cm->padw[U_COMPONENT] * cm->padh[U_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.stream[U]);
-
-	dct_quantize<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(
-			(const uint8_t*) cm->curframe->orig_gpu->V, predicted->V, cm->padw[V_COMPONENT],
-			residuals->Vdct, V_COMPONENT);
-	cudaMemcpyAsync(cm->curframe->residuals->Vdct, residuals->Vdct,
-			cm->padw[V_COMPONENT] * cm->padh[V_COMPONENT] * sizeof(int16_t), cudaMemcpyDeviceToHost,
-			c63_cuda.stream[V]);
-	//*/
-
+	dct_quantize_gpu(cm, c63_cuda);
 	dct_quantize_host(cm);
 
 	/* Reconstruct frame for inter-prediction */
-	/*
-	dequantize_idct<<<numBlocks_Y, threadsPerBlock, 0, c63_cuda.stream[Y]>>>(residuals->Ydct,
-			predicted->Y, cm->ypw, cm->curframe->recons_gpu->Y, Y_COMPONENT);
-
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[U]>>>(residuals->Udct,
-			predicted->U, cm->upw, cm->curframe->recons_gpu->U, U_COMPONENT);
-
-	dequantize_idct<<<numBlocks_UV, threadsPerBlock, 0, c63_cuda.stream[V]>>>(residuals->Vdct,
-			predicted->V, cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
-	//*/
-
+	dequantize_idct_gpu(cm, c63_cuda);
 	dequantize_idct_host(cm);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the

@@ -12,6 +12,9 @@
 #include "c63_cuda.h"
 #include "me.h"
 
+
+namespace gpu = c63::gpu;
+
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -323,7 +326,7 @@ static void set_motion_vectors(struct macroblock* __restrict__ mbs, const int* _
 }
 
 template<int component>
-void gpu_c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
+void gpu::c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
 		const struct c63_cuda& c63_cuda)
 {
 	const int w = cm->padw[component];
@@ -400,7 +403,7 @@ static void mc_block_8x8_gpu(const struct macroblock* __restrict__ mbs, int w, u
 }
 
 template<int component>
-void gpu_c63_motion_compensate(struct c63_common *cm, const struct c63_cuda& c63_cuda)
+void gpu::c63_motion_compensate(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
 	const int w = cm->padw[component];
 	const int h = cm->padh[component];
@@ -432,13 +435,13 @@ void gpu_c63_motion_compensate(struct c63_common *cm, const struct c63_cuda& c63
 	mc_block_8x8_gpu<<<numBlocks, threadsPerBlock, 0, stream>>>(mb, w, pred, ref);
 }
 
-template void gpu_c63_motion_estimate<Y>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
+template void gpu::c63_motion_estimate<Y>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
 		const struct c63_cuda& c63_cuda);
-template void gpu_c63_motion_estimate<U>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
+template void gpu::c63_motion_estimate<U>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
 		const struct c63_cuda& c63_cuda);
-template void gpu_c63_motion_estimate<V>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
+template void gpu::c63_motion_estimate<V>(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
 		const struct c63_cuda& c63_cuda);
 
-template void gpu_c63_motion_compensate<Y>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
-template void gpu_c63_motion_compensate<U>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
-template void gpu_c63_motion_compensate<V>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
+template void gpu::c63_motion_compensate<Y>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
+template void gpu::c63_motion_compensate<U>(struct c63_common *cm, const struct c63_cuda& c63_cuda);
+template void gpu::c63_motion_compensate<V>(struct c63_common *cm, const struct c63_cuda& c63_cuda);

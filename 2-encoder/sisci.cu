@@ -411,9 +411,9 @@ void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* res
 {
 	sci_error_t error;
 	*keyframe[segNum] = keyframe_val;
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
-	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
-	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
+	//memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
+	//memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
 
 	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
 	//memcpy(residuals_U, residuals->Udct, residualsSizeU);

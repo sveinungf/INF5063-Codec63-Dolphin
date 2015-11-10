@@ -76,9 +76,7 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		//gpu_c63_motion_compensate<U>(cm, c63_cuda);
 		//gpu_c63_motion_compensate<V>(cm, c63_cuda);
 
-		c63_motion_compensate(cm, Y_COMPONENT);
-		c63_motion_compensate(cm, U_COMPONENT);
-		c63_motion_compensate(cm, V_COMPONENT);
+		c63_motion_compensate_host(cm);
 	}
 	else
 	{
@@ -126,17 +124,7 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 			c63_cuda.stream[V]);
 	//*/
 
-	dct_quantize_host(cm->curframe->orig->Y, cm->curframe->predicted->Y, cm->padw[Y_COMPONENT],
-	      cm->padh[Y_COMPONENT], cm->curframe->residuals->Ydct,
-	      cm->quanttbl[Y_COMPONENT]);
-
-	dct_quantize_host(cm->curframe->orig->U, cm->curframe->predicted->U, cm->padw[U_COMPONENT],
-	      cm->padh[U_COMPONENT], cm->curframe->residuals->Udct,
-	      cm->quanttbl[U_COMPONENT]);
-
-	dct_quantize_host(cm->curframe->orig->V, cm->curframe->predicted->V, cm->padw[V_COMPONENT],
-	      cm->padh[V_COMPONENT], cm->curframe->residuals->Vdct,
-	      cm->quanttbl[V_COMPONENT]);
+	dct_quantize_host(cm);
 
 	/* Reconstruct frame for inter-prediction */
 	/*
@@ -150,12 +138,7 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 			predicted->V, cm->vpw, cm->curframe->recons_gpu->V, V_COMPONENT);
 	//*/
 
-	dequantize_idct_host(cm->curframe->residuals->Ydct, cm->curframe->predicted->Y,
-	      cm->ypw, cm->yph, cm->curframe->recons->Y, cm->quanttbl[Y_COMPONENT]);
-	dequantize_idct_host(cm->curframe->residuals->Udct, cm->curframe->predicted->U,
-	      cm->upw, cm->uph, cm->curframe->recons->U, cm->quanttbl[U_COMPONENT]);
-	dequantize_idct_host(cm->curframe->residuals->Vdct, cm->curframe->predicted->V,
-	      cm->vpw, cm->vph, cm->curframe->recons->V, cm->quanttbl[V_COMPONENT]);
+	dequantize_idct_host(cm);
 
 	/* Function dump_image(), found in common.c, can be used here to check if the
 	 prediction is correct */

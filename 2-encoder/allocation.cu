@@ -3,56 +3,79 @@
 #include "cuda/me.h"
 
 extern "C" {
+#include "simd/common.h"
 #include "simd/me.h"
 }
+
 
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
 
 template<int component>
-static void c63_motion_estimate_host(struct c63_common* cm)
+static inline void dct_quantize_host(struct c63_common* cm)
 {
-	int w = cm->padw[component];
-	int h = cm->padh[component];
-	int cols = cm->mb_cols[component];
-	int rows = cm->mb_rows[component];
-	struct macroblock* mb = cm->curframe->mbs[component];
-	struct macroblock* mb_gpu = cm->curframe->mbs_gpu[component];
+	const int w = cm->padw[component];
+	const int h = cm->padh[component];
+	uint8_t* quanttbl = cm->quanttbl[component];
 
 	uint8_t* orig;
-	uint8_t* orig_gpu;
-	uint8_t* recons;
-	uint8_t* recons_gpu;
+	uint8_t* predicted;
+	int16_t* residuals;
 
 	switch (component)
 	{
 		case Y_COMPONENT:
 			orig = cm->curframe->orig->Y;
-			orig_gpu = (uint8_t*) cm->curframe->orig_gpu->Y;
-			recons = cm->refframe->recons->Y;
-			recons_gpu = cm->refframe->recons_gpu->Y;
+			predicted = cm->curframe->predicted->Y;
+			residuals = cm->curframe->residuals->Ydct;
 			break;
 		case U_COMPONENT:
 			orig = cm->curframe->orig->U;
-			orig_gpu = (uint8_t*) cm->curframe->orig_gpu->U;
-			recons = cm->refframe->recons->U;
-			recons_gpu = cm->refframe->recons_gpu->U;
+			predicted = cm->curframe->predicted->U;
+			residuals = cm->curframe->residuals->Udct;
 			break;
 		case V_COMPONENT:
 			orig = cm->curframe->orig->V;
-			orig_gpu = (uint8_t*) cm->curframe->orig_gpu->V;
-			recons = cm->refframe->recons->V;
-			recons_gpu = cm->refframe->recons_gpu->V;
+			predicted = cm->curframe->predicted->V;
+			residuals = cm->curframe->residuals->Vdct;
 			break;
 	}
 
-	//cudaMemcpy(orig, orig_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-	//cudaMemcpy(recons, recons_gpu, w * h * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	dct_quantize_host(orig, predicted, w, h, residuals, quanttbl);
+}
 
-	c63_motion_estimate(cm, component);
+template<int component>
+static inline void dequantize_idct_host(struct c63_common* cm)
+{
+	const int w = cm->padw[component];
+	const int h = cm->padh[component];
+	uint8_t* quanttbl = cm->quanttbl[component];
 
-	//cudaMemcpy(mb_gpu, mb, cols * rows * sizeof(struct macroblock), cudaMemcpyHostToDevice);
+	uint8_t* predicted;
+	uint8_t* recons;
+	int16_t* residuals;
+
+	switch (component)
+	{
+		case Y_COMPONENT:
+			predicted = cm->curframe->predicted->Y;
+			recons = cm->curframe->recons->Y;
+			residuals = cm->curframe->residuals->Ydct;
+			break;
+		case U_COMPONENT:
+			predicted = cm->curframe->predicted->U;
+			recons = cm->curframe->recons->U;
+			residuals = cm->curframe->residuals->Udct;
+			break;
+		case V_COMPONENT:
+			predicted = cm->curframe->predicted->V;
+			recons = cm->curframe->recons->V;
+			residuals = cm->curframe->residuals->Vdct;
+			break;
+	}
+
+	dequantize_idct_host(residuals, predicted, w, h, recons, quanttbl);
 }
 
 void c63_motion_estimate_gpu(struct c63_common* cm, const struct c63_common_gpu& cm_gpu,
@@ -72,12 +95,51 @@ void c63_motion_estimate_gpu(struct c63_common* cm, const struct c63_common_gpu&
 void c63_motion_estimate_host(struct c63_common* cm)
 {
 #if !(Y_ON_GPU)
-	c63_motion_estimate_host<Y>(cm);
+	c63_motion_estimate(cm, Y);
 #endif
 #if !(U_ON_GPU)
-	c63_motion_estimate_host<U>(cm);
+	c63_motion_estimate(cm, U);
 #endif
 #if !(V_ON_GPU)
-	c63_motion_estimate_host<V>(cm);
+	c63_motion_estimate(cm, V);
+#endif
+}
+
+void c63_motion_compensate_host(struct c63_common* cm)
+{
+#if !(Y_ON_GPU)
+	c63_motion_compensate(cm, Y);
+#endif
+#if !(U_ON_GPU)
+	c63_motion_compensate(cm, U);
+#endif
+#if !(V_ON_GPU)
+	c63_motion_compensate(cm, V);
+#endif
+}
+
+void dct_quantize_host(struct c63_common* cm)
+{
+#if !(Y_ON_GPU)
+	dct_quantize_host<Y>(cm);
+#endif
+#if !(U_ON_GPU)
+	dct_quantize_host<U>(cm);
+#endif
+#if !(V_ON_GPU)
+	dct_quantize_host<V>(cm);
+#endif
+}
+
+void dequantize_idct_host(struct c63_common* cm)
+{
+#if !(Y_ON_GPU)
+	dequantize_idct_host<Y>(cm);
+#endif
+#if !(U_ON_GPU)
+	dequantize_idct_host<U>(cm);
+#endif
+#if !(V_ON_GPU)
+	dequantize_idct_host<V>(cm);
 #endif
 }

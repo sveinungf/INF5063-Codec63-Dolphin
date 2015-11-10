@@ -375,26 +375,34 @@ static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *pre
 	}
 }
 
-void c63_motion_compensate(struct c63_common *cm)
+void c63_motion_compensate(struct c63_common *cm, int component)
 {
-	int mb_x, mb_y;
+	uint8_t* predicted = NULL;
+	uint8_t* recons = NULL;
 
-	/* Luma */
-	for (mb_y = 0; mb_y < cm->mb_rows[Y_COMPONENT]; ++mb_y)
+	switch (component)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols[Y_COMPONENT]; ++mb_x)
-		{
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->Y, cm->refframe->recons->Y, Y_COMPONENT);
-		}
+		case Y_COMPONENT:
+			predicted = cm->curframe->predicted->Y;
+			recons = cm->refframe->recons->Y;
+			break;
+		case U_COMPONENT:
+			predicted = cm->curframe->predicted->U;
+			recons = cm->refframe->recons->U;
+			break;
+		case V_COMPONENT:
+			predicted = cm->curframe->predicted->V;
+			recons = cm->refframe->recons->V;
+			break;
 	}
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows[U_COMPONENT]; ++mb_y)
+	int mb_x, mb_y;
+
+	for (mb_y = 0; mb_y < cm->mb_rows[component]; ++mb_y)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols[U_COMPONENT]; ++mb_x)
+		for (mb_x = 0; mb_x < cm->mb_cols[component]; ++mb_x)
 		{
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->U, cm->refframe->recons->U, U_COMPONENT);
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->V, cm->refframe->recons->V, V_COMPONENT);
+			mc_block_8x8(cm, mb_x, mb_y, predicted, recons, component);
 		}
 	}
 }

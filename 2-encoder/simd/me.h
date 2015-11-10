@@ -6,6 +6,6 @@
 
 void c63_motion_estimate(struct c63_common *cm, int component);
 
-void c63_motion_compensate(struct c63_common *cm);
+void c63_motion_compensate(struct c63_common *cm, int component);
 
 #endif  /* C63_ME_SIMD_H_ */

@@ -357,6 +357,8 @@ int main(int argc, char **argv)
 	/* Encode input frames */
 	int numframes = 0;
 
+	printf("%ld\n", sizeof(struct macroblock));
+
 	init_SISCI(localAdapterNo, readerNodeId, writerNodeId);
 
 	uint32_t width, height;
@@ -372,7 +374,7 @@ int main(int argc, char **argv)
 	images_gpu[1] = init_image_segment(cm, 1);
 	init_remote_encoded_data_segment(0);
 	init_remote_encoded_data_segment(1);
-	init_local_encoded_data_segments();
+	//init_local_encoded_data_segments();
 
 	//yuv_t* image_gpu = create_image_gpu(cm);
 	int segNum = 0;
@@ -419,7 +421,7 @@ int main(int argc, char **argv)
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
-		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals, segNum);
+		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs_gpu, cm->curframe->residuals_gpu, segNum);
 		++transferred;
 
 		// Reader can transfer next frame

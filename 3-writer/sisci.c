@@ -74,7 +74,7 @@ void receive_width_and_height(uint32_t *width, uint32_t *height) {
 	printf("Done\n");
 }
 
-uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
+uint8_t *init_local_segment(unsigned int localSegmentSize, int segNum) {
 	sci_error_t error;
 
 	// Set local segment id
@@ -86,7 +86,7 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 
 	// Map the local segment
 	int offset = 0;
-	uint8_t *local_buffer = SCIMapLocalSegment(localSegments[segNum] , &localMaps[segNum], offset, localSegmentSize, NULL, SCI_NO_FLAGS, &error);
+	uint8_t *local_buffer = SCIMapLocalSegment(localSegments[segNum] , &localMaps[segNum], offset, localSegmentSize, NULL, SCI_FLAG_READONLY_MAP, &error);
 	sisci_assert(error);
 
 	// Make segment accessible from the network adapter

@@ -80,13 +80,13 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	// Set offsets within segment
 	keyframe_offset = 0;
 
-	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
-	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	unsigned int mb_offset_Y = keyframe_offset + sizeof(int);
+	unsigned int mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
+	unsigned int mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
 
-	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
-	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
-	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
+	unsigned int residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	unsigned int residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
+	unsigned int residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
 
 
 	// Set pointers to macroblocks
@@ -177,7 +177,7 @@ int main(int argc, char **argv)
   cms[0]->e_ctx.fp = outfile;
   cms[1]->e_ctx.fp = cms[0]->e_ctx.fp;
 
-  uint32_t localSegmentSize = sizeof(int) + (cms[0]->mb_rows * cms[0]->mb_cols + (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2) +
+  unsigned int localSegmentSize = sizeof(int) + (cms[0]->mb_rows * cms[0]->mb_cols + (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2) +
 		  (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2))*sizeof(struct macroblock) +
 		  (cms[0]->ypw*cms[0]->yph + cms[0]->upw*cms[0]->uph + cms[0]->vpw*cms[0]->vph) * sizeof(int16_t);
 
@@ -218,6 +218,7 @@ int main(int argc, char **argv)
 	  }
 
 	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
+	  printf("keyframe val: %d\n", cms[segNum]->curframe->keyframe);
 
 	  write_frame(cms[segNum]);
 

@@ -5,12 +5,13 @@
 #include "sisci.h"
 
 #define MIN_SEG_SZ 237569
+#define LOK 2048
 
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
-sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_desc_t))));
-sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_desc_t))));
+sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS];
+sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS];
 uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
 
 // Reader
@@ -21,7 +22,7 @@ sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS] __attribute__((aligned(siz
 sci_map_t imageMaps[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_map_t))));
 
 // Writer
-static uint32_t segmentSizeWriter;
+static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
 static sci_local_interrupt_t interruptsFromWriter[NUM_IMAGE_SEGMENTS];
 static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
@@ -30,7 +31,6 @@ static sci_local_segment_t encodedDataSegmentsLocal[NUM_IMAGE_SEGMENTS];
 static sci_map_t encodedDataMapsLocal[NUM_IMAGE_SEGMENTS];
 static sci_dma_queue_t dmaQueues[NUM_IMAGE_SEGMENTS];
 
-uint32_t totalSize;
 unsigned int keyframeSize;
 unsigned int mbSizeY;
 unsigned int mbSizeU;
@@ -39,21 +39,27 @@ unsigned int residualsSizeY;
 unsigned int residualsSizeU;
 unsigned int residualsSizeV;
 
-uint32_t keyframe_offset;
-uint32_t mbOffsetY;
-uint32_t residualsY_offset;
-uint32_t mbOffsetU;
-uint32_t residualsU_offset;
-uint32_t mbOffsetV;
-uint32_t residualsV_offset;
+unsigned int keyframe_offset;
+unsigned int mbOffsetY;
+unsigned int residualsY_offset;
+unsigned int mbOffsetU;
+unsigned int residualsU_offset;
+unsigned int mbOffsetV;
+unsigned int residualsV_offset;
 
-int *keyframe[NUM_IMAGE_SEGMENTS];
+volatile int *keyframe[NUM_IMAGE_SEGMENTS];
 struct macroblock *mb_Y[NUM_IMAGE_SEGMENTS];
 struct macroblock *mb_U[NUM_IMAGE_SEGMENTS];
 struct macroblock *mb_V[NUM_IMAGE_SEGMENTS];
-dct_t *residuals_Y[NUM_IMAGE_SEGMENTS];
-dct_t *residuals_U[NUM_IMAGE_SEGMENTS];
-dct_t *residuals_V[NUM_IMAGE_SEGMENTS];
+
+
+volatile struct macroblock *remote_mb_Y[NUM_IMAGE_SEGMENTS];
+volatile struct macroblock *remote_mb_U[NUM_IMAGE_SEGMENTS];
+volatile struct macroblock *remote_mb_V[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_Y[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_U[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_V[NUM_IMAGE_SEGMENTS];
+static sci_map_t encodedDataMapsRemote[NUM_IMAGE_SEGMENTS];
 
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode)
@@ -191,6 +197,8 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	unsigned int imageSize = imageSizeY + imageSizeU + imageSizeV;
 	unsigned int segmentSize = imageSize;
 
+	//segmentSize = segmentSize/LOK * LOK + LOK;
+
 	if(segmentSize < MIN_SEG_SZ) {
 		segmentSize = MIN_SEG_SZ;
 	}
@@ -209,9 +217,24 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	SCIAttachPhysicalMemory(0, attributes.devicePointer, 0, segmentSize, imageSegments[segNum], SCI_FLAG_CUDA_BUFFER, &error);
 	sisci_assert(error);
 
-	void* buffer = SCIMapLocalSegment(imageSegments[segNum], &imageMaps[segNum], 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	unsigned int offset = 0;
+	volatile void* buffer;
+	buffer = SCIMapLocalSegment(imageSegments[segNum], &imageMaps[segNum], offset, imageSizeY, NULL, SCI_FLAG_READONLY_MAP, &error);
 	sisci_assert(error);
+	image.Y = (volatile uint8_t*) buffer;
 
+	offset += imageSizeY;
+	buffer = SCIMapLocalSegment(imageSegments[segNum], &imageMaps[segNum], offset, imageSizeU, NULL, SCI_FLAG_READONLY_MAP, &error);
+	sisci_assert(error);
+	image.U = (volatile uint8_t*) buffer;
+
+	offset += imageSizeU;
+	buffer = SCIMapLocalSegment(imageSegments[segNum], &imageMaps[segNum], offset, imageSizeV, NULL, SCI_FLAG_READONLY_MAP, &error);
+	sisci_assert(error);
+	image.V = (volatile uint8_t*) buffer;
+
+
+	/*
 	unsigned int offset = 0;
 	image.Y = (uint8_t*) buffer + offset;
 	offset += imageSizeY;
@@ -219,6 +242,7 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	offset += imageSizeU;
 	image.V = (uint8_t*) buffer + offset;
 	offset += imageSizeV;
+	*/
 
 	SCIPrepareSegment(imageSegments[segNum], localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
@@ -244,6 +268,91 @@ void init_remote_encoded_data_segment(int segNum)
 	// Get segment size
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
 
+	unsigned int offset = 0;
+
+	printf("segnum: %d\n", segNum);
+	/*
+	volatile void *buffer;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+			offset, keyframeSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	keyframe[segNum] = (volatile int*) (volatile uint8_t*) buffer;
+
+	offset += keyframeSize;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, mbSizeY, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_mb_Y[segNum] = (struct macroblock*)(volatile uint8_t*)buffer;
+
+	offset += mbSizeY;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, mbSizeU, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_mb_U[segNum] = (struct macroblock*)(volatile uint8_t*)buffer;
+
+	offset += mbSizeU;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, mbSizeV, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_mb_V[segNum] = (struct macroblock*)(volatile uint8_t*)buffer;
+
+	offset += mbSizeV;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, residualsSizeY, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_residuals_Y[segNum] = (volatile uint8_t*)buffer;
+
+	offset += residualsSizeY;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, residualsSizeU, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_residuals_U[segNum] = (volatile uint8_t*)buffer;
+
+	offset += residualsSizeU;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, residualsSizeV, (void*)((uint8_t*)buffer+offset), SCI_FLAG_FIXED_MAP_ADDR, &error);
+	sisci_assert(error);
+	remote_residuals_V[segNum] = (volatile uint8_t*)buffer;
+	*/
+	/*
+	volatile void *buffer;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+			offset, keyframeSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	keyframe[segNum] = (volatile int*) (volatile uint8_t*) buffer;
+
+	offset += keyframeSize;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, mbSizeY+mbSizeU+mbSizeV, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	remote_mb_Y[segNum] = (struct macroblock*)(volatile uint8_t*)buffer;
+	remote_mb_U[segNum] = (struct macroblock*)((volatile uint8_t*)buffer+mbSizeY);
+	remote_mb_V[segNum] = (struct macroblock*)((volatile uint8_t*)buffer+mbSizeU);
+
+	offset += mbSizeY+mbSizeU+mbSizeV;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+				offset, residualsSizeY+residualsSizeU+residualsSizeV, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	remote_residuals_Y[segNum] = (volatile uint8_t*)buffer;
+	remote_residuals_U[segNum] = ((volatile uint8_t*)buffer+residualsSizeY);
+	remote_residuals_V[segNum] = ((volatile uint8_t*)buffer+residualsSizeU);
+	 */
+
+	volatile void *buffer;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+			offset, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	keyframe[segNum] = (int*) ((uint8_t*)buffer + keyframe_offset);
+
+	remote_mb_Y[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetY);
+	remote_mb_U[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetU);
+	remote_mb_V[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetV);
+
+	remote_residuals_Y[segNum] = (uint8_t*)buffer + residualsY_offset;
+	remote_residuals_U[segNum] = (uint8_t*)buffer + residualsU_offset;
+	remote_residuals_V[segNum] = (uint8_t*)buffer + residualsV_offset;
+
+
 }
 
 void init_local_encoded_data_segment() {
@@ -256,7 +365,7 @@ void init_local_encoded_data_segment() {
 	SCIPrepareSegment(encodedDataSegmentsLocal[0], localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
 	sisci_assert(error);
 
-	void *buffer = SCIMapLocalSegment(encodedDataSegmentsLocal[0], &encodedDataMapsLocal[0], 0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
+	volatile void *buffer = SCIMapLocalSegment(encodedDataSegmentsLocal[0], &encodedDataMapsLocal[0], 0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	keyframe[0] = (int*) ((uint8_t*)buffer + keyframe_offset);
@@ -264,10 +373,6 @@ void init_local_encoded_data_segment() {
 	mb_Y[0] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
 	mb_U[0] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
 	mb_V[0] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetV);
-
-	residuals_Y[0] = (dct_t*) ((uint8_t*) buffer + residualsY_offset);
-	residuals_U[0] = (dct_t*) ((uint8_t*) buffer + residualsU_offset);
-	residuals_V[0] = (dct_t*) ((uint8_t*) buffer + residualsV_offset);
 }
 
 
@@ -276,12 +381,14 @@ void init_local_encoded_data_segments() {
 	uint32_t localSegmentId;
 	void *buffer;
 
+	unsigned int segmentSize = keyframeSize + mbSizeY + mbSizeU + mbSizeV;
+
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 
 		localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | (37 + i);
 
-		SCICreateSegment(writer_sds[i], &encodedDataSegmentsLocal[i], localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
+		SCICreateSegment(writer_sds[i], &encodedDataSegmentsLocal[i], localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		printf("i: %d\n", i);
@@ -289,7 +396,7 @@ void init_local_encoded_data_segments() {
 		SCIPrepareSegment(encodedDataSegmentsLocal[i], localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
 		sisci_assert(error);
 
-		buffer = SCIMapLocalSegment(encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i], 0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
+		buffer = SCIMapLocalSegment(encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i], 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 
 		keyframe[i] = (int*) ((uint8_t*)buffer + keyframe_offset);
@@ -297,10 +404,6 @@ void init_local_encoded_data_segments() {
 		mb_Y[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
 		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetV);
-
-		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsY_offset);
-		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsU_offset);
-		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsV_offset);
 	}
 }
 
@@ -318,9 +421,12 @@ static void cleanup_local_segment(sci_local_segment_t* segment, sci_map_t* map)
 	sisci_check(error);
 }
 
-static void cleanup_remote_segment(sci_remote_segment_t* segment)
+static void cleanup_remote_segment(sci_remote_segment_t* segment, sci_map_t *map)
 {
 	sci_error_t error;
+
+	SCIUnmapSegment(*map, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	SCIDisconnectSegment(*segment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
@@ -330,10 +436,10 @@ void cleanup_segments()
 {
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		cleanup_local_segment(&encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i]);
+		//cleanup_local_segment(&encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i]);
 		cudaFree((void*)cudaBuffers[i]);
 		cleanup_local_segment(&imageSegments[i], &imageMaps[i]);
-		cleanup_remote_segment(&encodedDataSegmentsWriter[i]);
+		cleanup_remote_segment(&encodedDataSegmentsWriter[i], &encodedDataMapsRemote[i]);
 	}
 
 }
@@ -409,21 +515,41 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 
 void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* residuals, int segNum)
 {
-	sci_error_t error;
+	//sci_error_t error;
 	*keyframe[segNum] = keyframe_val;
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
-	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
-	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
+	//memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
 
-	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
-	//memcpy(residuals_U, residuals->Udct, residualsSizeU);
-	//memcpy(residuals_V, residuals->Vdct, residualsSizeV);
+	/*
+	dis_dma_vec_t dis_dma_vec[1];
+	dis_dma_vec[0].size = sizeof(int)+mbSizeY+mbSizeU+mbSizeV;
+	dis_dma_vec[0].local_offset = 0;
+	dis_dma_vec[0].remote_offset = 0;
+	dis_dma_vec[1].size = residualsSizeY+residualsSizeU+residualsSizeV;
+	dis_dma_vec[1].local_offset = residualsY_offset;
+	dis_dma_vec[1].remote_offset = residualsY_offset;
+	//cudaMemcpy(remote_residuals_Y[segNum], residuals->Ydct, residualsSizeY+residualsSizeU+residualsSizeV, cudaMemcpyDeviceToHost);
+	*/
+	printf("Sending\n");
+	//cudaMemcpy((void*)remote_mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_mb_U[segNum], mbs[U_COMPONENT], mbSizeU, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_mb_V[segNum], mbs[V_COMPONENT], mbSizeV, cudaMemcpyDeviceToHost);
 
-	int *arg = (int*) malloc(sizeof(int));
-	*arg = segNum;
+	//cudaMemcpy((void*)remote_residuals_Y[segNum], residuals->Ydct, residualsSizeY+residualsSizeU+residualsSizeV, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_residuals_Y[segNum], residuals->Ydct, residualsSizeY, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_residuals_U[segNum], residuals->Udct, residualsSizeU, cudaMemcpyDeviceToHost);
+	cudaMemcpy((void*)remote_residuals_V[segNum], residuals->Vdct, residualsSizeV, cudaMemcpyDeviceToHost);
 
-	SCIStartDmaTransfer(dmaQueues[segNum], encodedDataSegmentsLocal[segNum], encodedDataSegmentsWriter[segNum], 0, segmentSizeWriter, 0, dma_callback, arg, SCI_FLAG_USE_CALLBACK, &error);
-	sisci_assert(error);
+	printf("sent\n");
+
+	//int *arg = (int*) malloc(sizeof(int));
+	//*arg = segNum;
+	signal_writer(DATA_TRANSFERRED, segNum);
+	//SCIStartDmaTransferVec(dmaQueues[segNum], encodedDataSegmentsLocal[segNum], encodedDataSegmentsWriter[segNum],
+			//1, dis_dma_vec,	dma_callback, arg, SCI_FLAG_USE_CALLBACK, &error);
+	//SCIStartDmaTransfer(dmaQueues[segNum], encodedDataSegmentsLocal[segNum], encodedDataSegmentsWriter[segNum],
+		//	0, sizeof(int)+mbSizeY+mbSizeU+mbSizeV, 0, dma_callback, arg, SCI_FLAG_USE_CALLBACK, &error);
+	//sisci_assert(error);
 }
 
 void wait_for_image_transfer(int segNum) {

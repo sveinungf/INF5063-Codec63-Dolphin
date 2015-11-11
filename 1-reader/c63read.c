@@ -3,6 +3,8 @@
 #include <getopt.h>
 #include <limits.h>
 #include <math.h>
+#include <signal.h>
+#include <sisci_api.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -89,7 +91,20 @@ static void print_help() {
 	exit(EXIT_FAILURE);
 }
 
+void interrupt_handler(int signal)
+{
+	SCITerminate();
+	exit(EXIT_FAILURE);
+}
+
 int main(int argc, char **argv) {
+	struct sigaction int_handler;
+	int_handler.sa_handler = interrupt_handler;
+	sigemptyset(&int_handler.sa_mask);
+	int_handler.sa_flags = 0;
+
+	sigaction(SIGINT, &int_handler, NULL);
+
 	int c;
 
 	if (argc == 1) {

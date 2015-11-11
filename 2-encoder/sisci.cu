@@ -277,6 +277,7 @@ void init_local_encoded_data_segments() {
 
 		localSegmentId = (localNodeId << 16) | (writerNodeId << 8) | (37 + i);
 
+		printf("size: %d\n", segmentSizeWriter);
 		SCICreateSegment(writer_sds[i], &encodedDataSegmentsLocal[i], localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 

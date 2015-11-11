@@ -9,6 +9,8 @@
 
 #include "common.h"
 
+static const int on_gpu[COLOR_COMPONENTS] = { Y_ON_GPU, U_ON_GPU, V_ON_GPU };
+
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -140,9 +142,6 @@ void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restr
 
 static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 {
-	f->orig = create_image(cm);
-	f->recons = create_image(cm);
-	f->predicted = create_image(cm);
 	f->recons_gpu = create_image_gpu(cm);
 	f->predicted_gpu = create_image_gpu(cm);
 
@@ -161,9 +160,6 @@ static void init_frame_gpu(struct c63_common* cm, struct frame* f)
 
 static void deinit_frame_gpu(struct frame* f)
 {
-	destroy_image(f->orig);
-	destroy_image(f->recons);
-	destroy_image(f->predicted);
 	destroy_image_gpu(f->recons_gpu);
 	destroy_image_gpu(f->predicted_gpu);
 
@@ -187,6 +183,10 @@ struct macroblock *create_mb(struct macroblock *mb, size_t size, const cudaStrea
 struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
 	struct frame *f = (frame*) malloc(sizeof(struct frame));
+
+	f->orig = create_image(cm);
+	f->recons = create_image(cm);
+	f->predicted = create_image(cm);
 
 	f->residuals = (dct_t*) malloc(sizeof(dct_t));
 
@@ -215,6 +215,10 @@ void destroy_frame(struct frame *f)
 {
 	deinit_frame_gpu(f);
 
+	destroy_image(f->orig);
+	destroy_image(f->recons);
+	destroy_image(f->predicted);
+
 	/*
 	cudaFreeHost(f->residuals->Ydct);
 	cudaFreeHost(f->residuals->Udct);
@@ -233,18 +237,34 @@ void destroy_frame(struct frame *f)
 yuv_t* create_image(struct c63_common *cm)
 {
 	yuv_t* image = (yuv_t*) malloc(sizeof(yuv_t));
-	cudaHostAlloc((void**)&image->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaHostAllocWriteCombined);
-	cudaHostAlloc((void**)&image->U, cm->upw * cm->uph * sizeof(uint8_t), cudaHostAllocWriteCombined);
-	cudaHostAlloc((void**)&image->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaHostAllocWriteCombined);
+
+	uint8_t** components[COLOR_COMPONENTS] = { &image->Y, &image->U, &image->V };
+
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		size_t size = cm->padw[c] * cm->padh[c] * sizeof(uint8_t);
+
+		if (on_gpu[c]) {
+			cudaHostAlloc((void**) components[c], size, cudaHostAllocWriteCombined);
+		} else {
+			*components[c] = (uint8_t*) malloc(size);
+		}
+	}
 
 	return image;
 }
 
 void destroy_image(yuv_t *image)
 {
-	cudaFreeHost(image->Y);
-	cudaFreeHost(image->U);
-	cudaFreeHost(image->V);
+	uint8_t* components[COLOR_COMPONENTS] = { image->Y, image->U, image->V };
+
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (on_gpu[c]) {
+			cudaFreeHost(components[c]);
+		} else {
+			free(components[c]);
+		}
+	}
+
 	free(image);
 }
 

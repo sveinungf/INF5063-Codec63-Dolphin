@@ -32,6 +32,10 @@
 
 #define ME_RANGE(c) (c == Y_COMPONENT ? ME_RANGE_Y : (c == U_COMPONENT ? ME_RANGE_U : ME_RANGE_V))
 
+#define Y_ON_GPU 1
+#define U_ON_GPU 1
+#define V_ON_GPU 1
+
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
  e.g., like 0xD8 in the SOI marker below. Some markers have a payload, and if

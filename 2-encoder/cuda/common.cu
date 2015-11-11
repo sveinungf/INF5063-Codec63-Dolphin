@@ -190,18 +190,21 @@ struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cud
 
 	f->residuals = (dct_t*) malloc(sizeof(dct_t));
 
-	uint32_t residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
-	uint32_t residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
-	uint32_t residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
+	dct_t* dct = f->residuals;
+	int16_t** residuals[COLOR_COMPONENTS] = { &dct->Ydct, &dct->Udct, &dct->Vdct };
 
-	cudaMallocHost((void**) &f->residuals->Ydct, residualsSizeY);
-	cudaMallocHost((void**) &f->residuals->Udct, residualsSizeU);
-	cudaMallocHost((void**) &f->residuals->Vdct, residualsSizeV);
-
-	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
-		size_t size = cm->mb_cols[i] * cm->mb_rows[i] * sizeof(struct macroblock);
-		f->mbs[i] = create_mb(f->mbs[i], size, c63_cuda.stream[i]);
+		size_t res_size = cm->padw[c] * cm->padh[c] * sizeof(uint16_t);
+
+		if (on_gpu[c]) {
+			cudaMallocHost((void**) residuals[c], res_size);
+		} else {
+			*residuals[c] = (int16_t*) malloc(res_size);
+		}
+
+		size_t mb_size = cm->mb_cols[c] * cm->mb_rows[c] * sizeof(struct macroblock);
+		f->mbs[c] = create_mb(f->mbs[c], mb_size, c63_cuda.stream[c]);
 	}
 
 	init_frame_gpu(cm, f);
@@ -217,14 +220,20 @@ void destroy_frame(struct frame *f)
 	destroy_image(f->recons);
 	destroy_image(f->predicted);
 
-	cudaFreeHost(f->residuals->Ydct);
-	cudaFreeHost(f->residuals->Udct);
-	cudaFreeHost(f->residuals->Vdct);
-	free(f->residuals);
+	dct_t* dct = f->residuals;
+	int16_t* residuals[COLOR_COMPONENTS] = { dct->Ydct, dct->Udct, dct->Vdct };
 
-	cudaFreeHost(f->mbs[Y_COMPONENT]);
-	cudaFreeHost(f->mbs[U_COMPONENT]);
-	cudaFreeHost(f->mbs[V_COMPONENT]);
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (on_gpu[c]) {
+			cudaFreeHost(residuals[c]);
+		} else {
+			free(residuals[c]);
+		}
+
+		cudaFreeHost(f->mbs[c]);
+	}
+
+	free(f->residuals);
 
 	free(f);
 }

@@ -53,9 +53,15 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		cm->curframe->keyframe = 0;
 	}
 
+#if !(Y_ON_GPU)
 	cudaMemcpy(cm->curframe->orig->Y, (void*) cm->curframe->orig_gpu->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+#endif
+#if !(U_ON_GPU)
 	cudaMemcpy(cm->curframe->orig->U, (void*) cm->curframe->orig_gpu->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+#endif
+#if !(V_ON_GPU)
 	cudaMemcpy(cm->curframe->orig->V, (void*) cm->curframe->orig_gpu->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+#endif
 
 	if (!cm->curframe->keyframe)
 	{

@@ -10,6 +10,7 @@ static sci_local_segment_t localImageSegments[NUM_IMAGE_SEGMENTS];
 static sci_map_t localImageMaps[NUM_IMAGE_SEGMENTS];
 
 static unsigned int imageSize;
+static int callback_arg[NUM_IMAGE_SEGMENTS];
 
 // Encoder
 static unsigned int encoderNodeId;
@@ -178,8 +179,6 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 		sisci_check(status);
 	}
 
-	free(arg);
-
 	return retVal;
 }
 
@@ -187,10 +186,9 @@ void transfer_image_async(int segNum)
 {
 	sci_error_t error;
 
-	int *arg = malloc(sizeof(int));
-	*arg = segNum;
+	callback_arg[segNum] = segNum;
 
-	SCIStartDmaTransfer(dmaQueues[segNum], localImageSegments[segNum], remoteImageSegments[segNum], 0, imageSize, 0, dma_callback, arg, SCI_FLAG_USE_CALLBACK, &error);
+	SCIStartDmaTransfer(dmaQueues[segNum], localImageSegments[segNum], remoteImageSegments[segNum], 0, imageSize, 0, dma_callback, &callback_arg[segNum], SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
 }
 

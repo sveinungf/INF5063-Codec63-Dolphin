@@ -25,10 +25,13 @@ static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
 static sci_local_data_interrupt_t interruptFromWriter;
 static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
+static int callback_arg[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
 static sci_local_segment_t encodedDataSegmentsLocal[NUM_IMAGE_SEGMENTS];
 static sci_map_t encodedDataMapsLocal[NUM_IMAGE_SEGMENTS];
 static sci_dma_queue_t dmaQueues[NUM_IMAGE_SEGMENTS];
+
+static int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
 
 static unsigned int keyframeSize;
 static unsigned int mbSizeY;
@@ -53,6 +56,15 @@ static struct macroblock *mb_V[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_Y[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_U[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_V[NUM_IMAGE_SEGMENTS];
+
+
+volatile struct macroblock *remote_mb_Y[NUM_IMAGE_SEGMENTS];
+volatile struct macroblock *remote_mb_U[NUM_IMAGE_SEGMENTS];
+volatile struct macroblock *remote_mb_V[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_Y[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_U[NUM_IMAGE_SEGMENTS];
+volatile uint8_t *remote_residuals_V[NUM_IMAGE_SEGMENTS];
+static sci_map_t encodedDataMapsRemote[NUM_IMAGE_SEGMENTS];
 
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode)
@@ -240,6 +252,30 @@ void init_remote_encoded_data_segment(int segNum)
 	// Get segment size
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
 
+	volatile void *buffer;
+	buffer = SCIMapRemoteSegment(encodedDataSegmentsWriter[segNum], &encodedDataMapsRemote[segNum],
+			0, segmentSizeWriter, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	keyframe[segNum] = (int*) ((uint8_t*)buffer + keyframe_offset);
+
+	remote_mb_Y[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetY);
+	remote_mb_U[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetU);
+	remote_mb_V[segNum] = (struct macroblock*)((uint8_t*)buffer + mbOffsetV);
+
+	remote_residuals_Y[segNum] = (uint8_t*)buffer + residualsY_offset;
+	remote_residuals_U[segNum] = (uint8_t*)buffer + residualsU_offset;
+	remote_residuals_V[segNum] = (uint8_t*)buffer + residualsV_offset;
+
+}
+
+void get_pointers(struct frame *frame, int segNum) {
+	frame->mbs[Y_COMPONENT] = (struct macroblock*)mb_Y[segNum];
+	frame->mbs[U_COMPONENT] = (struct macroblock*)mb_U[segNum];
+	frame->mbs[V_COMPONENT] = (struct macroblock*)mb_V[segNum];
+
+	frame->residuals->Ydct = (int16_t*)residuals_Y[segNum];
+	frame->residuals->Udct = (int16_t*)residuals_U[segNum];
+	frame->residuals->Vdct = (int16_t*)residuals_V[segNum];
 }
 
 void init_local_encoded_data_segment() {
@@ -290,6 +326,7 @@ void init_local_encoded_data_segments() {
 		sisci_assert(error);
 
 		keyframe[i] = (int*) ((uint8_t*)buffer + keyframe_offset);
+		cudaHostRegister((void*)keyframe[i], segmentSizeWriter, 0);
 
 		mb_Y[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
@@ -327,6 +364,7 @@ void cleanup_segments()
 {
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		cudaHostUnregister((void*)keyframe[i]);;
 		cleanup_local_segment(&encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i]);
 		cudaFree((void*)cudaBuffers[i]);
 		cleanup_local_segment(&imageSegments[i], &imageMaps[i]);
@@ -395,6 +433,8 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 		// Send interrupt to computation node signaling that the frame has been transferred
 		signal_writer(DATA_TRANSFERRED, *(int*)arg);
 
+		transfer_completed[*(int*)arg] = 1;
+
 		retVal = SCI_CALLBACK_CONTINUE;
 	}
 
@@ -402,33 +442,39 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 		retVal = SCI_CALLBACK_CANCEL;
 	}
 
-	free(arg);
-
 	return retVal;
 
 }
 
-void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* residuals, int segNum)
+void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
+	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
+}
+
+void transfer_encoded_data(int keyframe_val, int segNum)
 {
 	sci_error_t error;
 	*keyframe[segNum] = keyframe_val;
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
 
-	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
+	callback_arg[segNum] = segNum;
 
-	int *arg = (int*) malloc(sizeof(int));
-	*arg = segNum;
-
-	SCIStartDmaTransfer(dmaQueues[segNum], encodedDataSegmentsLocal[segNum], encodedDataSegmentsWriter[segNum], 0, segmentSizeWriter, 0, dma_callback, arg, SCI_FLAG_USE_CALLBACK, &error);
+	SCIStartDmaTransfer(dmaQueues[segNum], encodedDataSegmentsLocal[segNum], encodedDataSegmentsWriter[segNum], 0, segmentSizeWriter, 0, dma_callback, &callback_arg[segNum], SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
+
 }
 
+void wait_for_image_transfer(int segNum) {
+	while(!transfer_completed[segNum]);
+	transfer_completed[segNum] = 0;
+}
+/*
 void wait_for_image_transfer(int segNum) {
 	sci_error_t error;
 
 	SCIWaitForDMAQueue(dmaQueues[segNum], SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
+*/
 
 void signal_reader(int segNum)
 {

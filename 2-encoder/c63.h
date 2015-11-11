@@ -112,6 +112,11 @@ struct cuda_data
 	cudaStream_t streamU;
 	cudaStream_t streamV;
 
+	cudaStream_t streamYUV;
+	cudaEvent_t dct_quant_doneY;
+	cudaEvent_t dct_quant_doneU;
+	cudaEvent_t dct_quant_doneV;
+
 	unsigned int* sad_index_resultsY;
 	unsigned int* sad_index_resultsU;
 	unsigned int* sad_index_resultsV;

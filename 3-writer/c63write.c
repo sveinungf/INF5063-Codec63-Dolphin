@@ -25,9 +25,6 @@ FILE *outfile;
 static uint32_t width;
 static uint32_t height;
 
-yuv_t *image;
-yuv_t *image2;
-
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 int thread_done = 0;
@@ -221,14 +218,15 @@ int main(int argc, char **argv)
 
 	  write_frame(cms[segNum]);
 
+
+	  // Signal encoder that writer is ready for a new frame
+	  signal_encoder(segNum);
+
 	  // Flush
 	  pthread_cond_signal(&cond);
 
 	  printf(", written\n");
 	  ++numframes;
-
-	  // Signal encoder that writer is ready for a new frame
-	  signal_encoder(segNum);
 
 	  segNum ^= 1;
   }

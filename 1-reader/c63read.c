@@ -154,13 +154,11 @@ int main(int argc, char **argv) {
 
 	int segNum = 0;
 
-	int transferred = 0;
 	while (1) {
 
 		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The encoder sends an interrupt when it is ready to receive the next frame
 			wait_for_encoder(segNum);
-			--transferred;
 		}
 
 		int rc = read_yuv(infile, images[segNum]);
@@ -176,16 +174,15 @@ int main(int argc, char **argv) {
 
 		// Start DMA transfer with interrupt to encoder handled by callback
 		transfer_image_async(segNum);
-		++transferred;
 
 		++numframes;
+
+		segNum ^= 1;
 
 		if (limit_numframes && numframes >= limit_numframes) {
 			// No more data
 			break;
 		}
-
-		segNum ^= 1;
 	}
 
 	// Signal computation node that there are no more frames to be encoded

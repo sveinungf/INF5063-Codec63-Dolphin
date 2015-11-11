@@ -363,9 +363,9 @@ void transfer_encoded_data(int keyframe_val, struct macroblock** mbs, dct_t* res
 	memcpy(mb_U, mbs[U_COMPONENT], mbSizeU);
 	memcpy(mb_V, mbs[V_COMPONENT], mbSizeV);
 
-	memcpy(residuals_Y, residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
-	//memcpy(residuals_U, residuals->Udct, residualsSizeU);
-	//memcpy(residuals_V, residuals->Vdct, residualsSizeV);
+	memcpy(residuals_Y, residuals->Ydct, residualsSizeY);
+	memcpy(residuals_U, residuals->Udct, residualsSizeU);
+	memcpy(residuals_V, residuals->Vdct, residualsSizeV);
 
 	SCIStartDmaTransfer(dmaQueue, encodedDataSegmentLocal, encodedDataSegmentsWriter[segNum], 0, segmentSizeWriter, 0, dma_callback, NULL, SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);

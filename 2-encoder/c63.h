@@ -64,7 +64,6 @@ struct yuv
 
 struct dct
 {
-	int16_t *base;
 	int16_t *Ydct;
 	int16_t *Udct;
 	int16_t *Vdct;

@@ -326,7 +326,6 @@ void init_local_encoded_data_segments() {
 		sisci_assert(error);
 
 		keyframe[i] = (int*) ((uint8_t*)buffer + keyframe_offset);
-		cudaHostRegister((void*)keyframe[i], segmentSizeWriter, 0);
 
 		mb_Y[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
@@ -364,7 +363,6 @@ void cleanup_segments()
 {
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		cudaHostUnregister((void*)keyframe[i]);;
 		cleanup_local_segment(&encodedDataSegmentsLocal[i], &encodedDataMapsLocal[i]);
 		cudaFree((void*)cudaBuffers[i]);
 		cleanup_local_segment(&imageSegments[i], &imageMaps[i]);

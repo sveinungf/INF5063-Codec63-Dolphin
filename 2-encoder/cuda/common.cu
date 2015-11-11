@@ -173,13 +173,6 @@ static void deinit_frame_gpu(struct frame* f)
 	cudaFree(f->mbs_gpu[V_COMPONENT]);
 }
 
-struct macroblock *create_mb(struct macroblock *mb, size_t size, const cudaStream_t& stream) {
-	cudaMallocHost((void**)&mb, size);
-	cudaMemsetAsync(mb, 0, size, stream);
-
-	return mb;
-}
-
 struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
 	struct frame *f = (frame*) malloc(sizeof(struct frame));
@@ -196,15 +189,18 @@ struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cud
 	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
 		size_t res_size = cm->padw[c] * cm->padh[c] * sizeof(uint16_t);
+		int mb_num = cm->mb_cols[c] * cm->mb_rows[c];
 
 		if (on_gpu[c]) {
 			cudaMallocHost((void**) residuals[c], res_size);
+
+			cudaMallocHost((void**) &f->mbs[c], mb_num * sizeof(struct macroblock));
+			cudaMemsetAsync(f->mbs[c], 0, mb_num * sizeof(struct macroblock), c63_cuda.stream[c]);
 		} else {
 			*residuals[c] = (int16_t*) malloc(res_size);
-		}
 
-		size_t mb_size = cm->mb_cols[c] * cm->mb_rows[c] * sizeof(struct macroblock);
-		f->mbs[c] = create_mb(f->mbs[c], mb_size, c63_cuda.stream[c]);
+			f->mbs[c] = (struct macroblock*) calloc(mb_num, sizeof(struct macroblock));
+		}
 	}
 
 	init_frame_gpu(cm, f);
@@ -226,11 +222,11 @@ void destroy_frame(struct frame *f)
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
 		if (on_gpu[c]) {
 			cudaFreeHost(residuals[c]);
+			cudaFreeHost(f->mbs[c]);
 		} else {
 			free(residuals[c]);
+			free(f->mbs[c]);
 		}
-
-		cudaFreeHost(f->mbs[c]);
 	}
 
 	free(f->residuals);

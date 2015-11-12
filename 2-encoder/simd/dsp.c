@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../tables.h"
+#include "../../common/tables.h"
 #include "dsp.h"
 
 

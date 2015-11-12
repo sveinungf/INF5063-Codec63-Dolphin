@@ -67,12 +67,14 @@ all: c63enc
 	$(CC) $(CCFLAGS) -c $< -o $@
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
-	
-OBJECTS_ROOT = allocation.o c63enc.o init.o sisci.o tables.o
+
+OBJECTS_COMMON = tables.o	
+OBJECTS_ROOT = allocation.o c63enc.o init.o sisci.o
 OBJECTS_CUDA = dsp.o init_cuda.o me.o
 OBJECTS_SIMD = dsp.o me.o
 
 ALL_OBJECTS = $(OBJECTS_ROOT)
+ALL_OBJECTS += $(addprefix ../common/,$(OBJECTS_COMMON))
 ALL_OBJECTS += $(addprefix cuda/,$(OBJECTS_CUDA))
 ALL_OBJECTS += $(addprefix simd/,$(OBJECTS_SIMD))   
 
@@ -81,6 +83,7 @@ c63enc: $(ALL_OBJECTS)
 
 clean:
 	find . -type f -name '*.o' -delete
+	find ../common -type f -name '*.o' -delete
 	rm -f c63enc $(OUTPUT_VIDEO)
 
 encode: c63enc

@@ -1,5 +1,5 @@
+#include "../common/tables.h"
 #include "init.h"
-#include "tables.h"
 #include "cuda/init_cuda.h"
 
 

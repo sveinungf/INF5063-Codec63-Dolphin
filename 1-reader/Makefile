@@ -17,15 +17,21 @@ else
 	CCFLAGS += -O3
 endif
 
-# SISCI
+### SISCI ###
 DIS_SRC = /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 
-CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS)) -D_REENTRANT
+CCFLAGS += -D_REENTRANT
+CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
+#############
+
+DIR_COMMON = ../common
+
+CCFLAGS += -idirafter$(DIR_COMMON)
 
 ifeq ($(VIDEO),0)
 	WIDTH = 352
@@ -46,11 +52,13 @@ all: c63read
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 
-c63read: c63read.o sisci.o
+ALL_OBJECTS = c63read.o sisci.o
+
+c63read: $(ALL_OBJECTS)
 	$(CC) $^ $(LDFLAGS) $(CCFLAGS) -o $@
 
 clean:
-	rm -f *.o c63read
+	rm -f c63read $(ALL_OBJECTS)
 
 read: c63read
 	./c63read -w $(WIDTH) -h $(HEIGHT) -f $(FRAMES) -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_ENCODER) $(INPUT_VIDEO)

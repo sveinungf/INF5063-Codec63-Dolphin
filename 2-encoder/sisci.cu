@@ -1,8 +1,9 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 #define MIN_SEG_SZ 237569
 
@@ -19,6 +20,13 @@ sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
 sci_remote_data_interrupt_t interruptToReader;
 sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_local_segment_t))));
 sci_map_t imageMaps[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_map_t))));
+static sci_desc_t msg_sd;
+static sci_remote_segment_t msg_segment;
+static sci_map_t msg_map;
+static volatile uint8_t *msg_buffer;
+static int seg_offsets[NUM_IMAGE_SEGMENTS] = {0, 4};
+static sci_sequence_t msg_sequence;
+
 
 // Writer
 static unsigned int segmentSizeWriter;
@@ -84,6 +92,9 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 		SCIOpen(&writer_sds[i], SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
+
+	SCIOpen(&msg_sd, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
@@ -168,10 +179,14 @@ void cleanup_SISCI()
 
 
 void set_sizes_offsets(struct c63_common *cm) {
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
     keyframeSize = sizeof(int);
-    mbSizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
-    mbSizeU = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
-    mbSizeV = cm->mb_rowsV * cm->mb_colsV * sizeof(struct macroblock);
+    mbSizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+    mbSizeU = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
+    mbSizeV = cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
     residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
     residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
     residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
@@ -233,6 +248,27 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	sisci_assert(error);
 
 	return image;
+}
+
+
+volatile uint8_t* init_msg_segment() {
+	sci_error_t error;
+
+	//// Connect to msg protocol segment on reader
+	uint32_t remoteSegmentId = getRemoteSegId(localNodeId, readerNodeId, SEGMENT_MSG_PROT);
+	do {
+		SCIConnectSegment(msg_sd, &msg_segment, readerNodeId, remoteSegmentId, localAdapterNo,
+				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
+
+	unsigned int segmentSize = 2*sizeof(int);
+	msg_buffer = (uint8_t*)SCIMapRemoteSegment(msg_segment, &msg_map, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCICreateMapSequence(msg_map, &msg_sequence, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	return msg_buffer;
 }
 
 void init_remote_encoded_data_segment(int segNum)
@@ -327,6 +363,13 @@ void cleanup_segments()
 		cleanup_remote_segment(&encodedDataSegmentsWriter[i]);
 	}
 
+	sci_error_t error;
+	SCIRemoveSequence(msg_sequence, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+	SCIUnmapSegment(msg_map, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+	cleanup_remote_segment(&msg_segment);
+	sisci_check(error);
 }
 
 void receive_width_and_height(uint32_t* width, uint32_t* height)
@@ -403,8 +446,13 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 }
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
-	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
+	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
+	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
+
+	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizeY);
+	memcpy(residuals_U[segNum], residuals->Udct, residualsSizeU);
+	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizeV);
 }
 
 void cuda_copy_to_segment(struct c63_common *cm, int segNum) {
@@ -437,13 +485,24 @@ void wait_for_image_transfer(int segNum) {
 }
 */
 
+/*
 void signal_reader(int segNum)
 {
 	sci_error_t error;
 
 	int ack = segNum;
 	SCITriggerDataInterrupt(interruptToReader, (void*) &ack, sizeof(int), SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+}
+*/
 
+void signal_reader(int segNum)
+{
+	sci_error_t error;
+
+	int ack = 1;
+
+	SCIMemCpy(msg_sequence, &ack, msg_map, seg_offsets[segNum], sizeof(int), SCI_FLAG_ERROR_CHECK, &error);
 	sisci_assert(error);
 }
 

@@ -4,12 +4,14 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_common.h"
+#include "sisci_common.h"
+
 
 
 void init_SISCI(unsigned int localAdapterNo, unsigned int encoderNodeId);
 void cleanup_SISCI();
 
+volatile uint8_t *init_msg_segment();
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV, int segNum);
 void cleanup_segments();
 

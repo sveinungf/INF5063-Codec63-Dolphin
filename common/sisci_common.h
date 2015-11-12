@@ -29,6 +29,7 @@ typedef enum {
 
 // Segments
 typedef enum {
+	SEGMENT_MSG_PROT,
 	SEGMENT_READER_IMAGE,
 	SEGMENT_READER_IMAGE2,
 	SEGMENT_ENCODER_IMAGE,

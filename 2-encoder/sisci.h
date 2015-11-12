@@ -1,8 +1,9 @@
 #ifndef SISCI_H_
 #define SISCI_H_
 
-#include "../common/sisci_common.h"
 #include "c63.h"
+#include "sisci_common.h"
+
 
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode);
@@ -11,6 +12,7 @@ void cleanup_SISCI();
 void set_sizes_offsets(struct c63_common *cm);
 
 struct segment_yuv init_image_segment(struct c63_common* cm, int segNum);
+volatile uint8_t* init_msg_segment();
 void init_remote_encoded_data_segment(int segNum);
 void get_pointers(struct frame *frame, int segNum);
 void init_local_encoded_data_segments();

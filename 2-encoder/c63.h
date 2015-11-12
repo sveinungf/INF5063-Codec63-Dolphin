@@ -30,6 +30,12 @@
 #define ME_RANGE_U (ME_RANGE_Y/2)
 #define ME_RANGE_V (ME_RANGE_Y/2)
 
+#define ME_RANGE(c) (c == Y_COMPONENT ? ME_RANGE_Y : (c == U_COMPONENT ? ME_RANGE_U : ME_RANGE_V))
+
+#define Y_ON_GPU 1
+#define U_ON_GPU 0
+#define V_ON_GPU 1
+
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
  e.g., like 0xD8 in the SOI marker below. Some markers have a payload, and if
@@ -58,7 +64,6 @@ struct yuv
 
 struct dct
 {
-	int16_t *base;
 	int16_t *Ydct;
 	int16_t *Udct;
 	int16_t *Vdct;
@@ -86,9 +91,9 @@ struct frame
   yuv_t *recons_gpu;		// Reconstructed image
   yuv_t *predicted_gpu;		// Predicted frame from intra-prediction
 
-  yuv_t *orig_simd;
-  yuv_t *recons_simd;
-  yuv_t *predicted_simd;
+  yuv_t *orig;
+  yuv_t *recons;
+  yuv_t *predicted;
 
   dct_t *residuals;   // Difference between original image and predicted frame
   dct_t *residuals_gpu;
@@ -113,11 +118,11 @@ struct c63_common
   int width, height;
   int ypw, yph, upw, uph, vpw, vph;
 
-  int padw[COLOR_COMPONENTS], padh[COLOR_COMPONENTS];
+  int padw[COLOR_COMPONENTS];
+  int padh[COLOR_COMPONENTS];
 
-  int mb_colsY, mb_rowsY;
-  int mb_colsU, mb_rowsU;
-  int mb_colsV, mb_rowsV;
+  int mb_cols[COLOR_COMPONENTS];
+  int mb_rows[COLOR_COMPONENTS];
 
   uint8_t qp;                         // Quality parameter
 
@@ -135,9 +140,7 @@ struct c63_common
 
   struct entropy_ctx e_ctx;
 
-  struct boundaries me_boundariesY;
-  struct boundaries me_boundariesU;
-  struct boundaries me_boundariesV;
+  struct boundaries me_boundaries[COLOR_COMPONENTS];
 };
 
 #endif  /* C63_C63_H_ */

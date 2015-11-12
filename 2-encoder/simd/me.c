@@ -1,22 +1,23 @@
 #include <assert.h>
 #include <errno.h>
 #include <getopt.h>
+#include <immintrin.h>
 #include <limits.h>
 #include <math.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <immintrin.h>
-#include <stdbool.h>
 
-#include "zimd_me.h"
+#include "me.h"
 
 /*
  * Calculates SAD values comparing one 8x8 block in the current frame to 8x8 blocks
  * from 8 sequential starting points in the previous frame.
  */
-static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, int stride, __m128i* const result)
+static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, int stride,
+		__m128i* const result)
 {
 	/*
 	 * Loads the first row from the blocks in the previous frame starting
@@ -60,7 +61,8 @@ static void sad_block_8x8(const uint8_t* const orig, const uint8_t* const ref, i
  * Calculates SAD values comparing TWO 8x8 blocks in the current frame to 8x8 blocks
  * from 8 sequential starting points in the previous frame.
  */
-static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref, int stride, __m128i* const result1, __m128i* const result2)
+static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref, int stride,
+		__m128i* const result1, __m128i* const result2)
 {
 	__m128i ref_pixels = _mm_loadu_si128((void const*)(ref));
 	__m128i orig_pixels = _mm_loadu_si128((void const*)(orig));
@@ -98,7 +100,8 @@ static void sad_block_2x8x8(const uint8_t* const orig, const uint8_t* const ref,
  * multiple macroblocks with the same lowest SAD value, the one with the lowest index
  * will be used.
  */
-static void get_sad_index(const __m128i min_values, const __m128i min_indexes, int* sad_index_x, int* sad_index_y, int index_vector_row_length)
+static void get_sad_index(const __m128i min_values, const __m128i min_indexes, int* sad_index_x,
+		int* sad_index_y, int index_vector_row_length)
 {
 	uint16_t values[8] __attribute__((aligned(16)));
 	uint16_t indexes[8] __attribute__((aligned(16)));
@@ -131,7 +134,8 @@ static void get_sad_index(const __m128i min_values, const __m128i min_indexes, i
 }
 
 /* Motion estimation for two horizontally sequential 8x8 blocks */
-static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *orig, uint8_t *ref, int color_component)
+static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *orig, uint8_t *ref,
+		int color_component)
 {
 	int mb_index = mb_y * cm->padw[color_component] / 8 + mb1_x;
 
@@ -140,7 +144,7 @@ static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *
 	// Macroblock 2
 	struct macroblock *mb2 = &cm->curframe->mbs[color_component][mb_index + 1];
 
-	int range = cm->me_search_range;
+	int range = ME_RANGE_Y; // TODO
 
 	/* Quarter resolution for chroma channels. */
 	if (color_component > 0)
@@ -300,41 +304,59 @@ static void me_block_2x8x8(struct c63_common *cm, int mb1_x, int mb_y, uint8_t *
 	 * Now we have 8 SAD values and their corresponding indexes. get_sad_index() finds the
 	 * x and y values for the first macroblock with the lowest SAD value.
 	 */
-	get_sad_index(sad_min_values_block1, sad_min_indexes_block1, &sad_index_x, &sad_index_y, index_vector_row_length);
+	get_sad_index(sad_min_values_block1, sad_min_indexes_block1, &sad_index_x, &sad_index_y,
+			index_vector_row_length);
 	mb1->mv_x = normalized_left + sad_index_x - m1x;
 	mb1->mv_y = top + sad_index_y - my;
 	mb1->use_mv = 1;
 
-	get_sad_index(sad_min_values_block2, sad_min_indexes_block2, &sad_index_x, &sad_index_y, index_vector_row_length);
+	get_sad_index(sad_min_values_block2, sad_min_indexes_block2, &sad_index_x, &sad_index_y,
+			index_vector_row_length);
 	mb2->mv_x = normalized_left + sad_index_x - m2x;
 	mb2->mv_y = top + sad_index_y - my;
 	mb2->use_mv = 1;
 }
 
-void c63_motion_estimate(struct c63_common *cm)
+void c63_motion_estimate(struct c63_common *cm, int component)
 {
 	/* Compare this frame with previous reconstructed frame */
-	int mb_x, mb_y;
-	uint8_t* orig_U = cm->curframe->orig->U;
-	uint8_t* orig_V = cm->curframe->orig->V;
-	uint8_t* recons_U = cm->refframe->recons->U;
-	uint8_t* recons_V = cm->refframe->recons->V;
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows / 2; ++mb_y)
+	uint8_t* orig = NULL;
+	uint8_t* recons = NULL;
+
+	switch (component)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols / 2; mb_x += 2)
+		case Y_COMPONENT:
+			orig = cm->curframe->orig->Y;
+			recons = cm->refframe->recons->Y;
+			break;
+		case U_COMPONENT:
+			orig = cm->curframe->orig->U;
+			recons = cm->refframe->recons->U;
+			break;
+		case V_COMPONENT:
+			orig = cm->curframe->orig->V;
+			recons = cm->refframe->recons->V;
+			break;
+	}
+
+	int mb_x, mb_y;
+
+	for (mb_y = 0; mb_y < cm->mb_rows[component]; ++mb_y)
+	{
+		for (mb_x = 0; mb_x < cm->mb_cols[component]; mb_x += 2)
 		{
-			me_block_2x8x8(cm, mb_x, mb_y, orig_U, recons_U, U_COMPONENT);
-			me_block_2x8x8(cm, mb_x, mb_y, orig_V, recons_V, V_COMPONENT);
+			me_block_2x8x8(cm, mb_x, mb_y, orig, recons, component);
 		}
 	}
 }
 
 /* Motion compensation for 8x8 block */
-static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted, uint8_t *ref, int color_component)
+static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted,
+		uint8_t *ref, int color_component)
 {
-	struct macroblock *mb = &cm->curframe->mbs[color_component][mb_y * cm->padw[color_component] / 8 + mb_x];
+	struct macroblock *mb = &cm->curframe->mbs[color_component][mb_y * cm->padw[color_component] / 8
+			+ mb_x];
 
 	if (!mb->use_mv)
 	{
@@ -360,17 +382,34 @@ static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *pre
 	}
 }
 
-void c63_motion_compensate(struct c63_common *cm)
+void c63_motion_compensate(struct c63_common *cm, int component)
 {
+	uint8_t* predicted = NULL;
+	uint8_t* recons = NULL;
+
+	switch (component)
+	{
+		case Y_COMPONENT:
+			predicted = cm->curframe->predicted->Y;
+			recons = cm->refframe->recons->Y;
+			break;
+		case U_COMPONENT:
+			predicted = cm->curframe->predicted->U;
+			recons = cm->refframe->recons->U;
+			break;
+		case V_COMPONENT:
+			predicted = cm->curframe->predicted->V;
+			recons = cm->refframe->recons->V;
+			break;
+	}
+
 	int mb_x, mb_y;
 
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows / 2; ++mb_y)
+	for (mb_y = 0; mb_y < cm->mb_rows[component]; ++mb_y)
 	{
-		for (mb_x = 0; mb_x < cm->mb_cols / 2; ++mb_x)
+		for (mb_x = 0; mb_x < cm->mb_cols[component]; ++mb_x)
 		{
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->U, cm->refframe->recons->U, U_COMPONENT);
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->V, cm->refframe->recons->V, V_COMPONENT);
+			mc_block_8x8(cm, mb_x, mb_y, predicted, recons, component);
 		}
 	}
 }

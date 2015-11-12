@@ -1,10 +1,14 @@
-#ifndef C63_COMMON_H_
-#define C63_COMMON_H_
+#ifndef C63_DSP_CUDA_H_
+#define C63_DSP_CUDA_H_
 
 #include <inttypes.h>
 
-#include "c63.h"
+#include "../c63.h"
 #include "c63_cuda.h"
+
+
+namespace c63 {
+namespace gpu {
 
 __constant__ uint8_t quant_table[192] =
 {
@@ -77,28 +81,13 @@ __constant__ uint8_t UV_indexes[64] =
 	53, 60, 61, 54, 47, 55, 62, 63,
 };
 
-// Declarations
-struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda);
-
-yuv_t* create_image(struct c63_common *cm);
-
-yuv_t* create_image_gpu(struct c63_common *cm);
-
 __global__
 void dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, int16_t* __restrict__ out_data, int quantization);
 
 __global__
 void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization);
 
-void destroy_frame(struct frame *f);
+}
+}
 
-void destroy_image(yuv_t* image);
-
-void destroy_image_gpu(yuv_t* image);
-
-void dump_image(yuv_t *image, int w, int h, FILE *fp);
-
-void cuda_init(struct c63_common cm);
-void cuda_cleanup();
-
-#endif  /* C63_COMMON_H_ */
+#endif  /* C63_DSP_CUDA_H_ */

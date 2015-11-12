@@ -1,5 +1,6 @@
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 // Local
 static unsigned int localAdapterNo;
@@ -18,6 +19,13 @@ static sci_local_data_interrupt_t interruptFromEncoder;
 static sci_remote_data_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t remoteImageSegments[NUM_IMAGE_SEGMENTS];
 
+//Message protocol
+static sci_desc_t msg_sd;
+static sci_local_segment_t msg_segment;
+static sci_map_t msg_map;
+static volatile uint8_t *msg_buffer;
+static int seg_offsets[NUM_IMAGE_SEGMENTS] = {0, sizeof(uint32_t)};
+
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 {
 	localAdapterNo = localAdapter;
@@ -32,6 +40,9 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 		SCIOpen(&sds[i], SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
+
+	SCIOpen(&msg_sd, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
@@ -87,7 +98,31 @@ void cleanup_SISCI()
 		sisci_check(error);
 	}
 
+	SCIClose(msg_sd, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
 	SCITerminate();
+}
+
+volatile uint8_t *init_msg_segment() {
+	sci_error_t error;
+
+	uint32_t localSegmentId = getLocalSegId(localNodeId, encoderNodeId, SEGMENT_MSG_PROT);
+	unsigned int segmentSize = 2*sizeof(int);
+	SCICreateSegment(msg_sd, &msg_segment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL,
+			SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	msg_buffer = (uint8_t*)SCIMapLocalSegment(msg_segment, &msg_map, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCIPrepareSegment(msg_segment, localAdapterNo, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCISetSegmentAvailable(msg_segment, localAdapterNo, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	return msg_buffer;
 }
 
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV, int segNum)
@@ -142,6 +177,12 @@ void cleanup_segments()
 		SCIRemoveSegment(localImageSegments[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 	}
+
+	SCIUnmapSegment(msg_map, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveSegment(msg_segment, SCI_NO_FLAGS, &error);
+	sisci_check(error);
 }
 
 void send_width_and_height(uint32_t width, uint32_t height)
@@ -153,7 +194,7 @@ void send_width_and_height(uint32_t width, uint32_t height)
 			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
-
+/*
 void wait_for_encoder(int segNum)
 {
 	sci_error_t error;
@@ -164,6 +205,24 @@ void wait_for_encoder(int segNum)
 				SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	} while (ack != segNum);
+}
+*/
+
+void wait_for_encoder(int segNum)
+{
+	sci_error_t error;
+
+	int *ack = (int*)(msg_buffer + seg_offsets[segNum]);
+
+	do {
+		SCIWaitForLocalSegmentEvent(msg_segment, &encoderNodeId, &localAdapterNo, 1,
+				SCI_NO_FLAGS, &error);
+		if (*ack == 1) {
+			break;
+		}
+	} while(error != SCI_ERR_OK);
+
+	*ack = 0;
 }
 
 sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {

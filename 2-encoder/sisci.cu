@@ -1,8 +1,9 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 #define MIN_SEG_SZ 237569
 

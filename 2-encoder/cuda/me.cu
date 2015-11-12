@@ -8,12 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../../common/sisci_common.h"
 #include "c63_cuda.h"
 #include "me.h"
-
+#include "sisci_common.h"
 
 namespace gpu = c63::gpu;
+
 
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;

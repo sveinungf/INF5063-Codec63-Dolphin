@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../common/tables.h"
 #include "dsp.h"
+#include "tables.h"
 
 
 static void transpose_block(float *in_data, float *out_data)

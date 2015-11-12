@@ -1,8 +1,9 @@
 #ifndef SISCI_H_
 #define SISCI_H_
 
-#include "../common/sisci_common.h"
 #include "c63.h"
+#include "sisci_common.h"
+
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode);
 void cleanup_SISCI();

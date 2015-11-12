@@ -21,7 +21,7 @@ else
 	CCFLAGS += -O3
 endif
 
-#SISCI
+### SISCI ###
 DIS_SRC = /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
@@ -31,6 +31,12 @@ INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 CCFLAGS += -D_REENTRANT
 CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
+#############
+
+DIR_COMMON = ../common
+DIR_TEMP = ../temp
+
+CCFLAGS += $(addprefix -idirafter,$(DIR_COMMON))
 
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
@@ -58,8 +64,8 @@ else ifeq ($(VIDEO),2)
 	REFERENCE_C63 = ~/c63/reference/tractor.c63
 endif
 
-C63_FILE = ../temp/test.c63
-OUTPUT_VIDEO = ../temp/output.yuv
+C63_FILE = $(DIR_TEMP)/test.c63
+OUTPUT_VIDEO = $(DIR_TEMP)/output.yuv
 
 all: c63enc
 
@@ -74,7 +80,7 @@ OBJECTS_CUDA = dsp.o init_cuda.o me.o
 OBJECTS_SIMD = dsp.o me.o
 
 ALL_OBJECTS = $(OBJECTS_ROOT)
-ALL_OBJECTS += $(addprefix ../common/,$(OBJECTS_COMMON))
+ALL_OBJECTS += $(addprefix $(DIR_COMMON)/,$(OBJECTS_COMMON))
 ALL_OBJECTS += $(addprefix cuda/,$(OBJECTS_CUDA))
 ALL_OBJECTS += $(addprefix simd/,$(OBJECTS_SIMD))   
 

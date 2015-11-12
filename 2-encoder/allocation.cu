@@ -1,5 +1,5 @@
-#include "../common/sisci_common.h"
 #include "allocation.h"
+#include "sisci_common.h"
 #include "cuda/dsp.h"
 #include "cuda/me.h"
 

@@ -1,4 +1,5 @@
 CC = gcc
+CXX = g++
 
 DEBUG ?= 0
 
@@ -36,6 +37,8 @@ all: c63write
 
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
+%.o: %.cpp
+	$(CXX) $(CCFLAGS) -c $< -o $@
 	
 OBJECTS_COMMON = tables.o
 OBJECTS_ROOT = c63write.o c63_write.o sisci.o
@@ -44,7 +47,7 @@ ALL_OBJECTS = $(OBJECTS_ROOT)
 ALL_OBJECTS += $(addprefix $(DIR_COMMON)/,$(OBJECTS_COMMON)) 
 	
 c63write: $(ALL_OBJECTS)
-	$(CC) $^ $(LDFLAGS) $(CCFLAGS) -o $@
+	$(CXX) $^ $(LDFLAGS) $(CCFLAGS) -o $@
 	
 clean:
 	rm -f c63write $(ALL_OBJECTS) $(C63_FILE)

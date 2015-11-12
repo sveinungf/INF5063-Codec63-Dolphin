@@ -14,8 +14,13 @@
 
 #include "c63.h"
 #include "c63_write.h"
+
+extern "C" {
 #include "sisci.h"
 #include "tables.h"
+}
+
+using namespace std;
 
 
 struct c63_common *cms[NUM_IMAGE_SEGMENTS];
@@ -40,7 +45,7 @@ extern char *optarg;
 struct c63_common* init_c63_enc()
 {
   /* calloc() sets allocated memory to zero */
-  struct c63_common *cm = calloc(1, sizeof(struct c63_common));
+  struct c63_common *cm = (struct c63_common *) calloc(1, sizeof(struct c63_common));
 
   cm->width = width;
   cm->height = height;
@@ -71,8 +76,8 @@ struct c63_common* init_c63_enc()
     cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
   }
 
-  cm->curframe = malloc(sizeof(struct frame));
-  cm->curframe->residuals = malloc(sizeof(dct_t));
+  cm->curframe = (struct frame*) malloc(sizeof(struct frame));
+  cm->curframe->residuals = (dct_t*) malloc(sizeof(dct_t));
   return cm;
 }
 
@@ -232,8 +237,8 @@ int main(int argc, char **argv)
 
 	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
-	  write_frame(cms[segNum]);
-
+	  vector<uint8_t> byte_vector = write_frame_to_buffer(cms[segNum]);
+	  write_buffer_to_file(byte_vector, cms[segNum]->e_ctx.fp);
 
 	  // Signal encoder that writer is ready for a new frame
 	  signal_encoder(segNum);

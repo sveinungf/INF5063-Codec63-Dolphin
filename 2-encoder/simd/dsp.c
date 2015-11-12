@@ -209,11 +209,11 @@ static void quantize_block(float *in_data, float *out_data, uint8_t *quant_tbl)
 	for (zigzag = 0; zigzag < 64; zigzag += 8)
 	{
 		// Set the dct_values for the current interation
-		dct_values = _mm256_set_ps(in_data[UV_indexes_simd[zigzag + 7]],
-				in_data[UV_indexes_simd[zigzag + 6]], in_data[UV_indexes_simd[zigzag + 5]],
-				in_data[UV_indexes_simd[zigzag + 4]], in_data[UV_indexes_simd[zigzag + 3]],
-				in_data[UV_indexes_simd[zigzag + 2]], in_data[UV_indexes_simd[zigzag + 1]],
-				in_data[UV_indexes_simd[zigzag]]);
+		dct_values = _mm256_set_ps(in_data[UV_indexes[zigzag + 7]],
+				in_data[UV_indexes[zigzag + 6]], in_data[UV_indexes[zigzag + 5]],
+				in_data[UV_indexes[zigzag + 4]], in_data[UV_indexes[zigzag + 3]],
+				in_data[UV_indexes[zigzag + 2]], in_data[UV_indexes[zigzag + 1]],
+				in_data[UV_indexes[zigzag]]);
 
 		// Multiply with 0.25 to divide by 4.0
 		result = _mm256_mul_ps(dct_values, factor);
@@ -271,14 +271,14 @@ static void dequantize_block(float *in_data, float *out_data, uint8_t *quant_tbl
 		_mm256_store_ps(temp_buf, result);
 
 		// Store the results at the correct places in the out_data buffer
-		out_data[UV_indexes_simd[zigzag]] = temp_buf[0];
-		out_data[UV_indexes_simd[zigzag + 1]] = temp_buf[1];
-		out_data[UV_indexes_simd[zigzag + 2]] = temp_buf[2];
-		out_data[UV_indexes_simd[zigzag + 3]] = temp_buf[3];
-		out_data[UV_indexes_simd[zigzag + 4]] = temp_buf[4];
-		out_data[UV_indexes_simd[zigzag + 5]] = temp_buf[5];
-		out_data[UV_indexes_simd[zigzag + 6]] = temp_buf[6];
-		out_data[UV_indexes_simd[zigzag + 7]] = temp_buf[7];
+		out_data[UV_indexes[zigzag]] = temp_buf[0];
+		out_data[UV_indexes[zigzag + 1]] = temp_buf[1];
+		out_data[UV_indexes[zigzag + 2]] = temp_buf[2];
+		out_data[UV_indexes[zigzag + 3]] = temp_buf[3];
+		out_data[UV_indexes[zigzag + 4]] = temp_buf[4];
+		out_data[UV_indexes[zigzag + 5]] = temp_buf[5];
+		out_data[UV_indexes[zigzag + 6]] = temp_buf[6];
+		out_data[UV_indexes[zigzag + 7]] = temp_buf[7];
 	}
 }
 

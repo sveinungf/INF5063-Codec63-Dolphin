@@ -237,7 +237,7 @@ uint8_t zigzag_V[64] =
 /* Array containing the indexes resulting from calculating
  * (zigzag_V[zigzag]*8) + zigzag_U[zigzag] for zigzag = 0, 1, ..., 63
  */
-uint8_t UV_indexes_simd[64] =
+uint8_t UV_indexes[64] =
 {
 	 0,  1,  8, 16,  9,  2,  3, 10,
 	17, 24, 32, 25, 18, 11,  4,  5,

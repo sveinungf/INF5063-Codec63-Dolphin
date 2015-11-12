@@ -16,13 +16,6 @@
 #include "init.h"
 #include "sisci.h"
 #include "cuda/init_cuda.h"
-#include "cuda/me.h"
-
-extern "C" {
-#include "tables.h"
-#include "simd/common.h"
-#include "simd/me.h"
-}
 
 
 static const int Y = Y_COMPONENT;

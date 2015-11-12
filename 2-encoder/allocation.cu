@@ -4,7 +4,7 @@
 #include "cuda/me.h"
 
 extern "C" {
-#include "simd/common.h"
+#include "simd/dsp.h"
 #include "simd/me.h"
 }
 

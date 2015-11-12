@@ -78,23 +78,10 @@ __constant__ uint8_t UV_indexes[64] =
 	53, 60, 61, 54, 47, 55, 62, 63,
 };
 
-// Declarations
-struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda);
-
-yuv_t* create_image(struct c63_common *cm);
-
-yuv_t* create_image_gpu(struct c63_common *cm);
-
 __global__
 void dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, int16_t* __restrict__ out_data, int quantization);
 
 __global__
 void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization);
-
-void destroy_frame(struct frame *f);
-
-void destroy_image(yuv_t* image);
-
-void destroy_image_gpu(yuv_t* image);
 
 #endif  /* C63_COMMON_CUDA_H_ */

@@ -4,6 +4,9 @@
 #include "../c63.h"
 #include "c63_cuda.h"
 
+void init_frame_gpu(struct c63_common* cm, struct frame* f);
+void deinit_frame_gpu(struct frame* f);
+
 struct c63_cuda init_c63_cuda();
 void cleanup_c63_cuda(struct c63_cuda& c63_cuda);
 

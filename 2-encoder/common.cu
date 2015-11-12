@@ -197,6 +197,7 @@ struct macroblock *create_mb(struct macroblock *mb, size_t size, const cudaStrea
 
 struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
+
 	struct frame *f = (frame*) malloc(sizeof(struct frame));
 
 	f->residuals = (dct_t*) malloc(sizeof(dct_t));
@@ -219,7 +220,6 @@ struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& c63_cud
 	f->mbs[U_COMPONENT] = (struct macroblock*)((uint8_t*)f->mbs[Y_COMPONENT] + mbSizeY);
 	f->mbs[V_COMPONENT] = (struct macroblock*)((uint8_t*)f->mbs[U_COMPONENT] + mbSizeUV);
 
-
 	init_frame_gpu(cm, f);
 
 	return f;
@@ -235,6 +235,7 @@ void destroy_frame(struct frame *f)
 	cudaFreeHost(f->mbs[Y_COMPONENT]);
 
 	free(f);
+
 }
 
 yuv_t* create_image(struct c63_common *cm)

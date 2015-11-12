@@ -292,6 +292,7 @@ int main(int argc, char **argv)
 		wait_for_image_transfer(segNum);
 
 		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
+		//cuda_copy_to_segment(cm, segNum);
 
 		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The writer sends an interrupt when it is ready for the next frame

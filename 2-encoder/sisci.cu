@@ -407,6 +407,11 @@ void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
 	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
 }
 
+void cuda_copy_to_segment(struct c63_common *cm, int segNum) {
+	cudaMemcpy(mb_Y[segNum], cm->curframe->mbs_gpu[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV, cudaMemcpyDeviceToHost);
+	cudaMemcpy(residuals_Y[segNum], cm->curframe->residuals_gpu->Ydct, residualsSizeY+residualsSizeU+residualsSizeV, cudaMemcpyDeviceToHost);
+}
+
 void transfer_encoded_data(int keyframe_val, int segNum)
 {
 	sci_error_t error;

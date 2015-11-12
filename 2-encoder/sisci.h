@@ -23,6 +23,7 @@ int wait_for_reader(int segNum);
 void wait_for_writer(int segNum);
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum);
+void cuda_copy_to_segment(struct c63_common *cm, int segNum);
 void transfer_encoded_data(int keyframe, int segNum);
 void wait_for_image_transfer(int segNum);
 

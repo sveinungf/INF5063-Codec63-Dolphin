@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
 #include <errno.h>
 #include <getopt.h>
 #include <limits.h>
@@ -165,9 +167,10 @@ int main(int argc, char **argv)
 
 	struct segment_yuv images_gpu[2];
 	images_gpu[0] = init_image_segment(cm, 0);
+	images_gpu[1] = init_image_segment(cm, 1);
 	init_remote_encoded_data_segment(0);
 	init_remote_encoded_data_segment(1);
-	init_local_encoded_data_segment();
+	init_local_encoded_data_segments();
 
 	//yuv_t* image_gpu = create_image_gpu(cm);
 	int segNum = 0;
@@ -176,7 +179,7 @@ int main(int argc, char **argv)
 	while (1)
 	{
 		// The reader sends an interrupt when it has transferred the next frame
-		int done = wait_for_reader();
+		int done = wait_for_reader(segNum);
 
 		printf("Frame %d:", numframes);
 		fflush(stdout);
@@ -190,40 +193,42 @@ int main(int argc, char **argv)
 		{
 			printf("\rNo more frames from reader\n");
 
-			wait_for_writer();
+			wait_for_writer(segNum^1);
 
 			// Send interrupt to writer signaling that encoding has been finished
-			signal_writer(ENCODING_FINISHED);
+			signal_writer(ENCODING_FINISHED, segNum);
 			break;
 		}
 
-		c63_encode_image(cm, cm_gpu, c63_cuda, &images_gpu[0]);
+
+		c63_encode_image(cm, cm_gpu, c63_cuda, &images_gpu[segNum]);
 
 		// Wait until the GPU has finished encoding
 		cudaStreamSynchronize(c63_cuda.stream[Y]);
 		cudaStreamSynchronize(c63_cuda.stream[U]);
 		cudaStreamSynchronize(c63_cuda.stream[V]);
 
+		// Reader can transfer next frame
+		signal_reader(segNum);
+
 		printf(", encoded\n");
 		fflush(stdout);
 
-		if (numframes != 0 && transferred == 2)
-		{
+		wait_for_image_transfer(segNum);
+
+		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
+
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The writer sends an interrupt when it is ready for the next frame
-			wait_for_writer();
+			wait_for_writer(segNum);
+			//copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
 			--transferred;
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
-		transfer_encoded_data(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals,
-				segNum);
+
+		transfer_encoded_data(cm->curframe->keyframe, segNum);
 		++transferred;
-
-		// Reader can transfer next frame
-		signal_reader();
-
-		// Send interrupt to writer signaling the data has been transfered
-		//signal_writer(DATA_TRANSFERRED);
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;
@@ -241,6 +246,8 @@ int main(int argc, char **argv)
 
 	cleanup_segments();
 	cleanup_SISCI();
+
+	cudaDeviceReset();
 
 	return EXIT_SUCCESS;
 }

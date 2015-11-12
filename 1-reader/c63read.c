@@ -13,9 +13,6 @@
 #include "c63.h"
 #include "sisci.h"
 
-#define IMAGE_SEGMENT1 0
-#define IMAGE_SEGMENT2 1
-
 static unsigned int segmentSize_Y;
 static unsigned int segmentSize_U;
 static unsigned int segmentSize_V;
@@ -142,15 +139,17 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
-
 	init_SISCI(localAdapterNo, encoderNodeId);
 
 	send_width_and_height(width, height);
 
 	init_segment_sizes();
 
-	struct segment_yuv images[2];
-	init_image_segments(images, segmentSize_Y, segmentSize_U, segmentSize_V);
+	struct segment_yuv images[NUM_IMAGE_SEGMENTS];
+	int i;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		images[i] = init_image_segment(segmentSize_Y, segmentSize_U, segmentSize_V, i);
+	}
 
 	input_file = argv[optind];
 
@@ -168,19 +167,20 @@ int main(int argc, char **argv) {
 	/* Encode input frames */
 	int numframes = 0;
 
-	int imgNum = 0;
+	int segNum = 0;
 
 	while (1) {
-		int rc = read_yuv(infile, images[imgNum]);
+
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
+			// The encoder sends an interrupt when it is ready to receive the next frame
+			wait_for_encoder(segNum);
+		}
+
+		int rc = read_yuv(infile, images[segNum]);
 
 		if (!rc) {
 			// No more data
 			break;
-		}
-
-		if (numframes != 0) {
-			// The encoder sends an interrupt when it is ready to receive the next frame
-			wait_for_encoder();
 		}
 
 		// Copy new frame to remote segment
@@ -188,21 +188,21 @@ int main(int argc, char **argv) {
 		fflush(stdout);
 
 		// Start DMA transfer with interrupt to encoder handled by callback
-		transfer_image_async(imgNum);
+		transfer_image_async(segNum);
 
 		++numframes;
+
+		segNum ^= 1;
 
 		if (limit_numframes && numframes >= limit_numframes) {
 			// No more data
 			break;
 		}
-
-		imgNum ^= 1;
 	}
 
 	// Signal computation node that there are no more frames to be encoded
-	wait_for_encoder();
-	signal_encoder(NO_MORE_FRAMES);
+	wait_for_encoder(segNum^1);
+	signal_encoder(NO_MORE_FRAMES, segNum);
 
 	fclose(infile);
 

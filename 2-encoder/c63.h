@@ -112,6 +112,7 @@ struct boundaries
 	const int* __restrict__ bottom;
 };
 
+
 struct c63_common
 {
   int width, height;

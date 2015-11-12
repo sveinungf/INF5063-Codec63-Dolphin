@@ -18,8 +18,8 @@
 #include "tables.h"
 
 
-struct c63_common *cms[2];
-static volatile uint8_t *local_buffers[2];
+struct c63_common *cms[NUM_IMAGE_SEGMENTS];
+static volatile uint8_t *local_buffers[NUM_IMAGE_SEGMENTS];
 static uint32_t keyframe_offset;
 
 static char *output_file;
@@ -27,9 +27,6 @@ FILE *outfile;
 
 static uint32_t width;
 static uint32_t height;
-
-yuv_t *image;
-yuv_t *image2;
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
@@ -220,7 +217,7 @@ int main(int argc, char **argv)
 	  printf("Frame %d:", numframes);
 	  fflush(stdout);
 
-	  wait_for_encoder(&done, &length);
+	  wait_for_encoder(&done, &length, segNum);
 
 	  if (!done)
 	  {
@@ -237,14 +234,15 @@ int main(int argc, char **argv)
 
 	  write_frame(cms[segNum]);
 
+
+	  // Signal encoder that writer is ready for a new frame
+	  signal_encoder(segNum);
+
 	  // Flush
 	  pthread_cond_signal(&cond);
 
 	  printf(", written\n");
 	  ++numframes;
-
-	  // Signal encoder that writer is ready for a new frame
-	  signal_encoder();
 
 	  segNum ^= 1;
   }

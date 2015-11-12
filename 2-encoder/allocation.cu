@@ -40,7 +40,7 @@ static inline void zero_out_prediction_gpu(struct c63_common* cm, const struct c
 }
 
 template<int component>
-static inline void zero_out_prediction_host(struct c63_common* cm)
+void zero_out_prediction_host(struct c63_common* cm)
 {
 	const int w = cm->padw[component];
 	const int h = cm->padh[component];
@@ -109,7 +109,7 @@ static inline void dct_quantize_gpu(struct c63_common* cm, const struct c63_cuda
 }
 
 template<int component>
-static inline void dct_quantize_host(struct c63_common* cm)
+void dct_quantize_host(struct c63_common* cm)
 {
 	const int w = cm->padw[component];
 	const int h = cm->padh[component];
@@ -181,7 +181,7 @@ static inline void dequantize_idct_gpu(struct c63_common* cm, const struct c63_c
 }
 
 template<int component>
-static inline void dequantize_idct_host(struct c63_common* cm)
+void dequantize_idct_host(struct c63_common* cm)
 {
 	const int w = cm->padw[component];
 	const int h = cm->padh[component];
@@ -227,19 +227,6 @@ void c63_motion_estimate_gpu(struct c63_common* cm, const struct c63_common_gpu&
 #endif
 }
 
-void c63_motion_estimate_host(struct c63_common* cm)
-{
-#if !(Y_ON_GPU)
-	c63_motion_estimate(cm, Y);
-#endif
-#if !(U_ON_GPU)
-	c63_motion_estimate(cm, U);
-#endif
-#if !(V_ON_GPU)
-	c63_motion_estimate(cm, V);
-#endif
-}
-
 void c63_motion_compensate_gpu(struct c63_common *cm, const struct c63_cuda& c63_cuda)
 {
 #if Y_ON_GPU
@@ -250,19 +237,6 @@ void c63_motion_compensate_gpu(struct c63_common *cm, const struct c63_cuda& c63
 #endif
 #if V_ON_GPU
 	gpu::c63_motion_compensate<V>(cm, c63_cuda);
-#endif
-}
-
-void c63_motion_compensate_host(struct c63_common* cm)
-{
-#if !(Y_ON_GPU)
-	c63_motion_compensate(cm, Y);
-#endif
-#if !(U_ON_GPU)
-	c63_motion_compensate(cm, U);
-#endif
-#if !(V_ON_GPU)
-	c63_motion_compensate(cm, V);
 #endif
 }
 
@@ -279,19 +253,6 @@ void zero_out_prediction_gpu(struct c63_common* cm, const struct c63_cuda& c63_c
 #endif
 }
 
-void zero_out_prediction_host(struct c63_common* cm)
-{
-#if !(Y_ON_GPU)
-	zero_out_prediction_host<Y>(cm);
-#endif
-#if !(U_ON_GPU)
-	zero_out_prediction_host<U>(cm);
-#endif
-#if !(V_ON_GPU)
-	zero_out_prediction_host<V>(cm);
-#endif
-}
-
 void dct_quantize_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 {
 #if Y_ON_GPU
@@ -302,19 +263,6 @@ void dct_quantize_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 #endif
 #if V_ON_GPU
 	dct_quantize_gpu<V>(cm, c63_cuda);
-#endif
-}
-
-void dct_quantize_host(struct c63_common* cm)
-{
-#if !(Y_ON_GPU)
-	dct_quantize_host<Y>(cm);
-#endif
-#if !(U_ON_GPU)
-	dct_quantize_host<U>(cm);
-#endif
-#if !(V_ON_GPU)
-	dct_quantize_host<V>(cm);
 #endif
 }
 
@@ -331,15 +279,14 @@ void dequantize_idct_gpu(struct c63_common* cm, const struct c63_cuda& c63_cuda)
 #endif
 }
 
-void dequantize_idct_host(struct c63_common* cm)
-{
-#if !(Y_ON_GPU)
-	dequantize_idct_host<Y>(cm);
-#endif
-#if !(U_ON_GPU)
-	dequantize_idct_host<U>(cm);
-#endif
-#if !(V_ON_GPU)
-	dequantize_idct_host<V>(cm);
-#endif
-}
+template void zero_out_prediction_host<Y>(struct c63_common* cm);
+template void zero_out_prediction_host<U>(struct c63_common* cm);
+template void zero_out_prediction_host<V>(struct c63_common* cm);
+
+template void dct_quantize_host<Y>(struct c63_common* cm);
+template void dct_quantize_host<U>(struct c63_common* cm);
+template void dct_quantize_host<V>(struct c63_common* cm);
+
+template void dequantize_idct_host<Y>(struct c63_common* cm);
+template void dequantize_idct_host<U>(struct c63_common* cm);
+template void dequantize_idct_host<V>(struct c63_common* cm);

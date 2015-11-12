@@ -7,6 +7,7 @@ NODE_ID_ENCODER ?= 28
 LOCAL_ADAPTER_NO ?= 0
 
 CCFLAGS = -Wall
+CXXFLAGS = -std=c++11
 LDFLAGS = -lm -lpthread
 
 ifeq ($(DEBUG),1)
@@ -31,6 +32,8 @@ DIR_TEMP = ../temp
 
 CCFLAGS += -idirafter$(DIR_COMMON)
 
+CXXFLAGS += $(CCFLAGS)
+
 C63_FILE = ../temp/test.c63
 
 all: c63write
@@ -38,7 +41,7 @@ all: c63write
 %.o: %.c
 	$(CC) $(CCFLAGS) -c $< -o $@
 %.o: %.cpp
-	$(CXX) $(CCFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 	
 OBJECTS_COMMON = tables.o
 OBJECTS_ROOT = c63write.o c63_write.o sisci.o
@@ -47,7 +50,7 @@ ALL_OBJECTS = $(OBJECTS_ROOT)
 ALL_OBJECTS += $(addprefix $(DIR_COMMON)/,$(OBJECTS_COMMON)) 
 	
 c63write: $(ALL_OBJECTS)
-	$(CXX) $^ $(LDFLAGS) $(CCFLAGS) -o $@
+	$(CXX) $^ $(LDFLAGS) $(CXXFLAGS) -o $@
 	
 clean:
 	rm -f c63write $(ALL_OBJECTS) $(C63_FILE)

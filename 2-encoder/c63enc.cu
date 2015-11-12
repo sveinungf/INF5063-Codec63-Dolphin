@@ -15,7 +15,6 @@
 #include "c63.h"
 #include "init.h"
 #include "sisci.h"
-#include "cuda/common.h"
 #include "cuda/init_cuda.h"
 #include "cuda/me.h"
 

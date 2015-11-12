@@ -1,5 +1,5 @@
-#ifndef C63_COMMON_CUDA_H_
-#define C63_COMMON_CUDA_H_
+#ifndef C63_DSP_CUDA_H_
+#define C63_DSP_CUDA_H_
 
 #include <inttypes.h>
 
@@ -84,4 +84,4 @@ void dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict
 __global__
 void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization);
 
-#endif  /* C63_COMMON_CUDA_H_ */
+#endif  /* C63_DSP_CUDA_H_ */

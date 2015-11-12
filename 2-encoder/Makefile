@@ -88,9 +88,7 @@ c63enc: $(ALL_OBJECTS)
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:
-	find . -type f -name '*.o' -delete
-	find ../common -type f -name '*.o' -delete
-	rm -f c63enc $(OUTPUT_VIDEO)
+	rm -f c63enc $(ALL_OBJECTS) $(OUTPUT_VIDEO)
 
 encode: c63enc
 	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)

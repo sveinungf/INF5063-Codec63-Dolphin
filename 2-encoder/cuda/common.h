@@ -97,6 +97,4 @@ void destroy_image(yuv_t* image);
 
 void destroy_image_gpu(yuv_t* image);
 
-void dump_image(yuv_t *image, int w, int h, FILE *fp);
-
 #endif  /* C63_COMMON_CUDA_H_ */

@@ -7,6 +7,9 @@
 #include "c63_cuda.h"
 
 
+namespace c63 {
+namespace gpu {
+
 __constant__ uint8_t quant_table[192] =
 {
 	6,  4,  4,  5,  4,  4,  6,  5,
@@ -83,5 +86,8 @@ void dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict
 
 __global__
 void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization);
+
+}
+}
 
 #endif  /* C63_DSP_CUDA_H_ */

@@ -9,6 +9,9 @@
 
 #include "dsp.h"
 
+namespace gpu = c63::gpu;
+using namespace gpu;
+
 
 __device__
 static void dct_quant_block_8x8(float* in_data, float *out_data, int16_t __restrict__ *global_out, const uint8_t* __restrict__ quant_tbl, int i, const int j)
@@ -46,7 +49,7 @@ static void dct_quant_block_8x8(float* in_data, float *out_data, int16_t __restr
 }
 
 __global__
-void dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, int16_t* __restrict__ out_data, int quantization)
+void gpu::dct_quantize(const uint8_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, int16_t* __restrict__ out_data, int quantization)
 {
 	const int block_offset = (blockIdx.x + blockIdx.y * gridDim.x) * blockDim.x * blockDim.y;
 
@@ -103,7 +106,7 @@ static void dequant_idct_block_8x8(float *in_data, float *out_data, const uint8_
 }
 
 __global__
-void dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization)
+void gpu::dequantize_idct(const int16_t* __restrict__ in_data, const uint8_t* __restrict__ prediction, int w, uint8_t* __restrict__ out_data, int quantization)
 {
 	const int block_offset = (blockIdx.x + blockIdx.y * gridDim.x) * blockDim.x * blockDim.y;
 

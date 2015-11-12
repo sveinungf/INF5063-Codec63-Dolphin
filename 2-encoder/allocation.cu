@@ -102,7 +102,7 @@ static inline void dct_quantize_gpu(struct c63_common* cm, const struct c63_cuda
 	const dim3 threadsPerBlock(8, 8);
 	const dim3 numBlocks(w / threadsPerBlock.x, h / threadsPerBlock.y);
 
-	dct_quantize<<<numBlocks, threadsPerBlock, 0, stream>>>(orig, predicted, w, residuals,
+	gpu::dct_quantize<<<numBlocks, threadsPerBlock, 0, stream>>>(orig, predicted, w, residuals,
 			component);
 	cudaMemcpyAsync(residuals_host, residuals, w * h * sizeof(int16_t), cudaMemcpyDeviceToHost,
 			stream);
@@ -176,7 +176,7 @@ static inline void dequantize_idct_gpu(struct c63_common* cm, const struct c63_c
 	const dim3 threadsPerBlock(8, 8);
 	const dim3 numBlocks(w / threadsPerBlock.x, h / threadsPerBlock.y);
 
-	dequantize_idct<<<numBlocks, threadsPerBlock, 0, stream>>>(residuals, predicted, w, recons,
+	gpu::dequantize_idct<<<numBlocks, threadsPerBlock, 0, stream>>>(residuals, predicted, w, recons,
 			component);
 }
 

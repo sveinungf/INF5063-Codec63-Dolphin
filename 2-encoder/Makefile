@@ -36,7 +36,7 @@ LDFLAGS += -L/opt/DIS/lib64 -lsisci
 DIR_COMMON = ../common
 DIR_TEMP = ../temp
 
-CCFLAGS += $(addprefix -idirafter,$(DIR_COMMON))
+CCFLAGS += -idirafter$(DIR_COMMON)
 
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))

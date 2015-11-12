@@ -28,7 +28,7 @@ LDFLAGS += -L/opt/DIS/lib64 -lsisci
 DIR_COMMON = ../common
 DIR_TEMP = ../temp
 
-CCFLAGS += $(addprefix -idirafter,$(DIR_COMMON))
+CCFLAGS += -idirafter$(DIR_COMMON)
 
 C63_FILE = ../temp/test.c63
 

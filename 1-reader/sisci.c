@@ -1,5 +1,6 @@
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 // Local
 static unsigned int localAdapterNo;

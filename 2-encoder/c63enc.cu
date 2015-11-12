@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <math.h>
+#include <pthread.h>
 #include <signal.h>
 #include <sisci_api.h>
 #include <stdint.h>
@@ -20,6 +21,8 @@
 #include "cuda/init_cuda.h"
 
 
+static const int on_gpu[COLOR_COMPONENTS] = { Y_ON_GPU, U_ON_GPU, V_ON_GPU };
+
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -28,8 +31,92 @@ static const int V = V_COMPONENT;
 extern int optind;
 extern char *optarg;
 
-static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu& cm_gpu,
-		const struct c63_cuda& c63_cuda, struct segment_yuv* image_gpu)
+static struct c63_common* cm;
+static struct c63_cuda c63_cuda;
+
+pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t mut2 = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond_frame_received = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_frame_encoded = PTHREAD_COND_INITIALIZER;
+static bool thread_done = false;
+
+static inline void c63_encode_image_host()
+{
+#if !(Y_ON_GPU)
+	cudaMemcpyAsync(cm->curframe->orig->Y, (void*) cm->curframe->orig_gpu->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyDeviceToHost, c63_cuda.stream[Y]);
+	cudaStreamSynchronize(c63_cuda.stream[Y]);
+#endif
+#if !(U_ON_GPU)
+	cudaMemcpyAsync(cm->curframe->orig->U, (void*) cm->curframe->orig_gpu->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyDeviceToHost, c63_cuda.stream[U]);
+	cudaStreamSynchronize(c63_cuda.stream[U]);
+#endif
+#if !(V_ON_GPU)
+	cudaMemcpyAsync(cm->curframe->orig->V, (void*) cm->curframe->orig_gpu->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyDeviceToHost, c63_cuda.stream[V]);
+	cudaStreamSynchronize(c63_cuda.stream[V]);
+#endif
+
+	if (!cm->curframe->keyframe)
+	{
+		/* Motion Estimation */
+		c63_motion_estimate_host(cm);
+
+		/* Motion Compensation */
+		c63_motion_compensate_host(cm);
+	}
+	else
+	{
+		// dct_quantize() expects zeroed out prediction buffers for key frames.
+		// We zero them out here since we reuse the buffers from previous frames.
+		zero_out_prediction_host(cm);
+	}
+
+	/* DCT and Quantization */
+	dct_quantize_host(cm);
+
+	/* Reconstruct frame for inter-prediction */
+	dequantize_idct_host(cm);
+
+	/* Function dump_image(), found in common.c, can be used here to check if the
+	 prediction is correct */
+}
+
+static void* thread_c63_encode_image_host(void* arg)
+{
+	pthread_mutex_lock(&mut);
+	while (!thread_done) {
+		pthread_cond_wait(&cond_frame_received, &mut);
+
+		if (thread_done) {
+			break;
+		}
+
+		c63_encode_image_host();
+
+		pthread_mutex_lock(&mut2);
+		pthread_cond_signal(&cond_frame_encoded);
+		pthread_mutex_unlock(&mut2);
+	}
+	pthread_mutex_unlock(&mut);
+	return NULL;
+}
+
+static inline void c63_encode_image_gpu(const struct c63_common_gpu& cm_gpu)
+{
+	if (!cm->curframe->keyframe)
+	{
+		c63_motion_estimate_gpu(cm, cm_gpu, c63_cuda);
+		c63_motion_compensate_gpu(cm, c63_cuda);
+	}
+	else
+	{
+		zero_out_prediction_gpu(cm, c63_cuda);
+	}
+
+	dct_quantize_gpu(cm, c63_cuda);
+	dequantize_idct_gpu(cm, c63_cuda);
+}
+
+static void c63_encode_image(const struct c63_common_gpu& cm_gpu, struct segment_yuv* image_gpu)
 {
 	// Advance to next frame by swapping current and reference frame
 	std::swap(cm->curframe, cm->refframe);
@@ -47,44 +134,14 @@ static void c63_encode_image(struct c63_common *cm, const struct c63_common_gpu&
 		cm->curframe->keyframe = 0;
 	}
 
-#if !(Y_ON_GPU)
-	cudaMemcpy(cm->curframe->orig->Y, (void*) cm->curframe->orig_gpu->Y, cm->ypw * cm->yph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-#endif
-#if !(U_ON_GPU)
-	cudaMemcpy(cm->curframe->orig->U, (void*) cm->curframe->orig_gpu->U, cm->upw * cm->uph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-#endif
-#if !(V_ON_GPU)
-	cudaMemcpy(cm->curframe->orig->V, (void*) cm->curframe->orig_gpu->V, cm->vpw * cm->vph * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-#endif
+	pthread_mutex_lock(&mut);
+	pthread_cond_signal(&cond_frame_received);
+	pthread_mutex_unlock(&mut);
 
-	if (!cm->curframe->keyframe)
-	{
-		/* Motion Estimation */
-		c63_motion_estimate_gpu(cm, cm_gpu, c63_cuda);
-		c63_motion_estimate_host(cm);
+	c63_encode_image_gpu(cm_gpu);
+	//c63_encode_image_host();
 
-		/* Motion Compensation */
-		c63_motion_compensate_gpu(cm, c63_cuda);
-		c63_motion_compensate_host(cm);
-	}
-	else
-	{
-		// dct_quantize() expects zeroed out prediction buffers for key frames.
-		// We zero them out here since we reuse the buffers from previous frames.
-		zero_out_prediction_gpu(cm, c63_cuda);
-		zero_out_prediction_host(cm);
-	}
 
-	/* DCT and Quantization */
-	dct_quantize_gpu(cm, c63_cuda);
-	dct_quantize_host(cm);
-
-	/* Reconstruct frame for inter-prediction */
-	dequantize_idct_gpu(cm, c63_cuda);
-	dequantize_idct_host(cm);
-
-	/* Function dump_image(), found in common.c, can be used here to check if the
-	 prediction is correct */
 }
 
 static void print_help()
@@ -159,8 +216,8 @@ int main(int argc, char **argv)
 	receive_width_and_height(&width, &height);
 	send_width_and_height(width, height);
 
-	struct c63_cuda c63_cuda = init_c63_cuda();
-	struct c63_common *cm = init_c63_common(width, height, c63_cuda);
+	c63_cuda = init_c63_cuda();
+	cm = init_c63_common(width, height, c63_cuda);
 	struct c63_common_gpu cm_gpu = init_c63_gpu(cm, c63_cuda);
 
 	set_sizes_offsets(cm);
@@ -174,6 +231,10 @@ int main(int argc, char **argv)
 
 	//yuv_t* image_gpu = create_image_gpu(cm);
 	int segNum = 0;
+
+	pthread_t simd_thread;
+	pthread_create(&simd_thread, NULL, thread_c63_encode_image_host, NULL);
+	pthread_mutex_lock(&mut2);
 
 	int transferred = 0;
 	while (1)
@@ -201,12 +262,27 @@ int main(int argc, char **argv)
 		}
 
 
-		c63_encode_image(cm, cm_gpu, c63_cuda, &images_gpu[segNum]);
+		c63_encode_image(cm_gpu, &images_gpu[segNum]);
 
 		// Wait until the GPU has finished encoding
+		for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+			if (on_gpu[c]) {
+				cudaStreamSynchronize(c63_cuda.stream[c]);
+			}
+		}
+
+#if Y_ON_GPU
 		cudaStreamSynchronize(c63_cuda.stream[Y]);
+#endif
+#if U_ON_GPU
 		cudaStreamSynchronize(c63_cuda.stream[U]);
+#endif
+#if V_ON_GPU
 		cudaStreamSynchronize(c63_cuda.stream[V]);
+#endif
+
+		// Wait until the SIMD thread(s) have finished encoding
+		pthread_cond_wait(&cond_frame_encoded, &mut2);
 
 		// Reader can transfer next frame
 		signal_reader(segNum);
@@ -238,7 +314,12 @@ int main(int argc, char **argv)
 		segNum ^= 1;
 	}
 
-	//destroy_image_gpu(image_gpu);
+	pthread_mutex_unlock(&mut2);
+
+	pthread_mutex_lock(&mut);
+	thread_done = true;
+	pthread_cond_signal(&cond_frame_received);
+	pthread_mutex_unlock(&mut);
 
 	cleanup_c63_gpu(cm_gpu);
 	cleanup_c63_common(cm);
@@ -248,6 +329,11 @@ int main(int argc, char **argv)
 	cleanup_SISCI();
 
 	cudaDeviceReset();
+
+	pthread_cond_destroy(&cond_frame_received);
+	pthread_cond_destroy(&cond_frame_encoded);
+	pthread_mutex_destroy(&mut);
+	pthread_mutex_destroy(&mut2);
 
 	return EXIT_SUCCESS;
 }

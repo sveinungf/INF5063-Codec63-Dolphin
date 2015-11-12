@@ -138,7 +138,7 @@ static inline void dct_quantize_host(struct c63_common* cm)
 			break;
 	}
 
-	dct_quantize_host(orig, predicted, w, h, residuals, quanttbl);
+	dct_quantize(orig, predicted, w, h, residuals, quanttbl);
 }
 
 template<int component>
@@ -210,7 +210,7 @@ static inline void dequantize_idct_host(struct c63_common* cm)
 			break;
 	}
 
-	dequantize_idct_host(residuals, predicted, w, h, recons, quanttbl);
+	dequantize_idct(residuals, predicted, w, h, recons, quanttbl);
 }
 
 void c63_motion_estimate_gpu(struct c63_common* cm, const struct c63_common_gpu& cm_gpu,

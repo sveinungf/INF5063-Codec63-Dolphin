@@ -8,6 +8,7 @@
 #include "../tables.h"
 #include "dsp.h"
 
+
 static void transpose_block(float *in_data, float *out_data)
 {
 	int i;
@@ -416,7 +417,7 @@ static void dct_quantize_row(uint8_t *in_data, uint8_t *prediction, int w, int h
 	}
 }
 
-void dequantize_idct_host(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
+void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		uint8_t *out_data, uint8_t *quantization)
 {
 	int y;
@@ -428,7 +429,7 @@ void dequantize_idct_host(int16_t *in_data, uint8_t *prediction, uint32_t width,
 	}
 }
 
-void dct_quantize_host(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
+void dct_quantize(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		int16_t *out_data, uint8_t *quantization)
 {
 	int y;

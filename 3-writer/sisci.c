@@ -17,11 +17,6 @@ static unsigned int encoderNodeId;
 static sci_local_segment_t localSegments[NUM_IMAGE_SEGMENTS];
 static sci_map_t localMaps[NUM_IMAGE_SEGMENTS];
 
-static sci_local_data_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
-static sci_remote_data_interrupt_t interruptToEncoder;
-
-static unsigned int interruptFromEncoderNo;
-
 static local_syn_t encoder_syn;
 static remote_ack_t encoder_ack;
 
@@ -50,39 +45,24 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
-
-	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
-	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED + i;
-		SCICreateDataInterrupt(sds[i], &interruptsFromEncoder[i], localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
-		sisci_assert(error);
-	}
-
-	// Connect writer node to remote interrupt at processing machine
-	printf("Connecting to interrupt on encoder... ");
-	fflush(stdout);
-	do {
-			SCIConnectDataInterrupt(sds[0], &interruptToEncoder, encoderNodeId, localAdapterNo, DATA_WRITTEN,
-					SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-		} while (error != SCI_ERR_OK);
-
-	printf("Done!\n");
 }
 
 
 void receive_width_and_height(uint32_t *width, uint32_t *height) {
-	printf("Waiting for width and height from encoder...\n");
-	uint32_t widthAndHeight[2];
-	unsigned int length = 2*sizeof(uint32_t);
+	printf("Waiting for width and height from reader... ");
+	fflush(stdout);
 
 	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptsFromEncoder[0], &widthAndHeight, &length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	SCIWaitForLocalSegmentEvent(encoder_syn.segment, &encoderNodeId, &localAdapterNo, SCI_INFINITE_TIMEOUT,
+			SCI_NO_FLAGS, &error);
 
-	*width = widthAndHeight[0];
-	*height = widthAndHeight[1];
+	*width = encoder_syn.msg->frameNum;
+	*height = encoder_syn.msg->status;
 
-	printf("Done\n");
+	encoder_syn.msg->frameNum = -1;
+	encoder_syn.msg->status = -1;
+
+	printf("Done!\n");
 }
 
 uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
@@ -145,13 +125,6 @@ void init_msg_segments() {
 	sisci_assert(error);
 
 }
-/*
-void wait_for_encoder(uint8_t *done, unsigned int *length, int segNum) {
-	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptsFromEncoder[segNum], done, length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-*/
 
 void wait_for_encoder(uint8_t *done, int32_t frameNum)
 {
@@ -172,15 +145,7 @@ void wait_for_encoder(uint8_t *done, int32_t frameNum)
 
 	*done = 0;
 }
-/*
-void signal_encoder(int segNum) {
-	sci_error_t error;
 
-	int ack = segNum;
-	SCITriggerDataInterrupt(interruptToEncoder, (void*) &ack, sizeof(int), SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-*/
 
 void signal_encoder(int32_t frameNum)
 {
@@ -196,14 +161,8 @@ void signal_encoder(int32_t frameNum)
 void cleanup_SISCI() {
 	sci_error_t error;
 
-	SCIDisconnectDataInterrupt(interruptToEncoder, SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		SCIRemoveDataInterrupt(interruptsFromEncoder[i], SCI_NO_FLAGS, &error);
-		sisci_check(error);
-
 		SCIUnmapSegment(localMaps[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 

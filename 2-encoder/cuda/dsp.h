@@ -3,8 +3,7 @@
 
 #include <inttypes.h>
 
-#include "../c63.h"
-#include "c63_cuda.h"
+#include "c63.h"
 
 
 namespace c63 {

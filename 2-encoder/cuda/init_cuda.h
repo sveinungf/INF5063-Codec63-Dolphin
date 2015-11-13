@@ -1,8 +1,9 @@
 #ifndef INIT_CUDA_H_
 #define INIT_CUDA_H_
 
-#include "../c63.h"
+#include "c63.h"
 #include "c63_cuda.h"
+
 
 void init_frame_gpu(struct c63_common* cm, struct frame* f);
 void deinit_frame_gpu(struct frame* f);

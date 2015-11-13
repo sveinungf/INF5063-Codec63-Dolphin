@@ -14,9 +14,22 @@
 
 #include "c63.h"
 #include "c63_write.h"
+
+extern "C" {
 #include "sisci.h"
 #include "tables.h"
+}
 
+using namespace std;
+
+typedef struct test_thread {
+	vector<uint8_t> *byte_vectors[NUM_IMAGE_SEGMENTS];
+} test_t;
+
+
+static const int Y = Y_COMPONENT;
+static const int U = U_COMPONENT;
+static const int V = V_COMPONENT;
 
 struct c63_common *cms[NUM_IMAGE_SEGMENTS];
 static volatile uint8_t *local_buffers[NUM_IMAGE_SEGMENTS];
@@ -30,6 +43,9 @@ static uint32_t height;
 
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t mut2 = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond2 = PTHREAD_COND_INITIALIZER;
+
 int thread_done = 0;
 int fd;
 
@@ -40,7 +56,7 @@ extern char *optarg;
 struct c63_common* init_c63_enc()
 {
   /* calloc() sets allocated memory to zero */
-  struct c63_common *cm = calloc(1, sizeof(struct c63_common));
+  struct c63_common *cm = (struct c63_common *) calloc(1, sizeof(struct c63_common));
 
   cm->width = width;
   cm->height = height;
@@ -52,14 +68,18 @@ struct c63_common* init_c63_enc()
   cm->padw[V_COMPONENT] = cm->vpw = (uint32_t)(ceil(width*VX/(YX*8.0f))*8);
   cm->padh[V_COMPONENT] = cm->vph = (uint32_t)(ceil(height*VY/(YY*8.0f))*8);
 
-  cm->mb_cols = cm->ypw / 8;
-  cm->mb_rows = cm->yph / 8;
+  cm->mb_cols[Y] = cm->ypw / 8;
+  cm->mb_cols[U] = cm->mb_cols[Y] / 2;
+  cm->mb_cols[V] = cm->mb_cols[U];
+
+  cm->mb_rows[Y] = cm->yph / 8;
+  cm->mb_rows[U] = cm->mb_rows[Y] / 2;
+  cm->mb_rows[V] = cm->mb_rows[U];
 
   /* Quality parameters -- Home exam deliveries should have original values,
    i.e., quantization factor should be 25, search range should be 16, and the
    keyframe interval should be 100. */
   cm->qp = 25;                  // Constant quantization factor. Range: [1..50]
-  cm->me_search_range = 16;     // Pixels in every direction
   cm->keyframe_interval = 100;  // Distance between keyframes
 
   /* Initialize quantization tables */
@@ -71,8 +91,8 @@ struct c63_common* init_c63_enc()
     cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
   }
 
-  cm->curframe = malloc(sizeof(struct frame));
-  cm->curframe->residuals = malloc(sizeof(dct_t));
+  cm->curframe = (struct frame*) malloc(sizeof(struct frame));
+  cm->curframe->residuals = (dct_t*) malloc(sizeof(dct_t));
   return cm;
 }
 
@@ -81,10 +101,10 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	keyframe_offset = 0;
 
 	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
-	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows[Y]*cm->mb_cols[Y]*sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows[U]*cm->mb_cols[U]*sizeof(struct macroblock);
 
-	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows[V]*cm->mb_cols[V]*sizeof(struct macroblock);
 	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
 	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
 
@@ -101,10 +121,18 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 }
 
 static void *flush(void *arg) {
+	test_t *args = (test_t*)arg;
+	int num = 0;
 	pthread_mutex_lock(&mut);
 	while (thread_done == 0) {
 		pthread_cond_wait(&cond, &mut);
+		write_buffer_to_file(*args->byte_vectors[num], outfile);
 		fsync(fd);
+		num ^= 1;
+
+		pthread_mutex_lock(&mut2);
+		pthread_cond_signal(&cond2);
+		pthread_mutex_unlock(&mut2);
 	}
 	pthread_mutex_unlock(&mut);
 	return NULL;
@@ -191,9 +219,11 @@ int main(int argc, char **argv)
   cms[0]->e_ctx.fp = outfile;
   cms[1]->e_ctx.fp = cms[0]->e_ctx.fp;
 
-  uint32_t localSegmentSize = sizeof(int) + (cms[0]->mb_rows * cms[0]->mb_cols + (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2) +
-		  (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2))*sizeof(struct macroblock) +
-		  (cms[0]->ypw*cms[0]->yph + cms[0]->upw*cms[0]->uph + cms[0]->vpw*cms[0]->vph) * sizeof(int16_t);
+  uint32_t localSegmentSize = sizeof(int);
+  for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+	  localSegmentSize += cms[0]->mb_cols[c] * cms[0]->mb_rows[c] * sizeof(struct macroblock);
+	  localSegmentSize += cms[0]->padw[c] * cms[0]->padh[c] * sizeof(int16_t);
+  }
 
   int i;
   for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
@@ -205,38 +235,50 @@ int main(int argc, char **argv)
   uint8_t done = 0;
   unsigned int length = sizeof(uint8_t);
 
+  test_t thread_args;
+
   fd = fileno(outfile);
   pthread_t child;
-  pthread_create(&child, NULL, flush, NULL);
+  pthread_create(&child, NULL, flush, (void*)&thread_args);
 
   /* Encode input frames */
   int32_t frameNum = 0;
   int segNum = 0;
+  vector<uint8_t> byte_vectors[NUM_IMAGE_SEGMENTS];
+  pthread_mutex_lock(&mut2);
+
   while (1)
   {
-	  printf("Frame %d:", frameNum);
-	  fflush(stdout);
+  	  printf("Frame %d:", frameNum);
+  	  fflush(stdout);
 
-	  wait_for_encoder(&done, frameNum);
+  	  wait_for_encoder(&done, frameNum);
 
-	  if (!done)
-	  {
-		  printf(" Received");
-		  fflush(stdout);
-	  }
-	  else
-	  {
-		  printf("\rNo more frames from encoder\n");
-		  break;
-	  }
+  	  if (!done)
+  	  {
+  		  printf(" Received");
+  		  fflush(stdout);
+  	  }
+  	  else
+  	  {
+  		  printf("\rNo more frames from encoder\n");
+  		  break;
+  	  }
 
-	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
+  	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
-	  write_frame(cms[segNum]);
-
+	  byte_vectors[segNum] = write_frame_to_buffer(cms[segNum]);
 
 	  // Signal encoder that writer is ready for a new frame
 	  signal_encoder(frameNum);
+
+	  if(frameNum >= NUM_IMAGE_SEGMENTS) {
+		  pthread_cond_wait(&cond2, &mut2);
+	  }
+
+	  thread_args.byte_vectors[segNum] = &byte_vectors[segNum];
+
+	  //write_buffer_to_file(byte_vector, cms[segNum]->e_ctx.fp);
 
 	  // Flush
 	  pthread_cond_signal(&cond);
@@ -246,7 +288,7 @@ int main(int argc, char **argv)
 
 	  segNum ^= 1;
   }
-
+  pthread_mutex_unlock(&mut2);
   pthread_mutex_lock(&mut);
   thread_done = 1;
   pthread_cond_signal(&cond);

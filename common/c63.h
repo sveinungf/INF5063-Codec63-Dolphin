@@ -25,6 +25,17 @@
 #define VX 1
 #define VY 1
 
+// Motion estimation search range, pixels in every direction
+#define ME_RANGE_Y 16
+#define ME_RANGE_U (ME_RANGE_Y/2)
+#define ME_RANGE_V (ME_RANGE_Y/2)
+
+#define ME_RANGE(c) (c == Y_COMPONENT ? ME_RANGE_Y : (c == U_COMPONENT ? ME_RANGE_U : ME_RANGE_V))
+
+#define Y_ON_GPU 1
+#define U_ON_GPU 0
+#define V_ON_GPU 0
+
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
  e.g., like 0xD8 in the SOI marker below. Some markers have a payload, and if
@@ -53,9 +64,9 @@ struct yuv
 
 struct dct
 {
-  int16_t *Ydct;
-  int16_t *Udct;
-  int16_t *Vdct;
+	int16_t *Ydct;
+	int16_t *Udct;
+	int16_t *Vdct;
 };
 
 typedef struct yuv yuv_t;
@@ -72,32 +83,50 @@ struct macroblock
 {
   int use_mv;
   int8_t mv_x, mv_y;
-};
+}__attribute__((packed));
 
 struct frame
 {
-  yuv_t *orig;        // Original input image
-  yuv_t *recons;      // Reconstructed image
-  yuv_t *predicted;   // Predicted frame from intra-prediction
+  struct segment_yuv *orig_gpu;			// Original input image
+  yuv_t *recons_gpu;		// Reconstructed image
+  yuv_t *predicted_gpu;		// Predicted frame from intra-prediction
+
+  yuv_t *orig;
+  yuv_t *recons;
+  yuv_t *predicted;
 
   dct_t *residuals;   // Difference between original image and predicted frame
+  dct_t *residuals_gpu;
 
   struct macroblock *mbs[COLOR_COMPONENTS];
+  struct macroblock *mbs_gpu[COLOR_COMPONENTS];
+  
   int keyframe;
 };
+
+struct boundaries
+{
+	const int* __restrict__ left;
+	const int* __restrict__ right;
+	const int* __restrict__ top;
+	const int* __restrict__ bottom;
+};
+
 
 struct c63_common
 {
   int width, height;
   int ypw, yph, upw, uph, vpw, vph;
 
-  int padw[COLOR_COMPONENTS], padh[COLOR_COMPONENTS];
+  int padw[COLOR_COMPONENTS];
+  int padh[COLOR_COMPONENTS];
 
-  int mb_cols, mb_rows;
+  int mb_cols[COLOR_COMPONENTS];
+  int mb_rows[COLOR_COMPONENTS];
 
   uint8_t qp;                         // Quality parameter
 
-  int me_search_range;
+  //int me_search_range;	// This is now defined in c63.h
 
   uint8_t quanttbl[COLOR_COMPONENTS][64];
 
@@ -110,6 +139,8 @@ struct c63_common
   int frames_since_keyframe;
 
   struct entropy_ctx e_ctx;
+
+  struct boundaries me_boundaries[COLOR_COMPONENTS];
 };
 
 #endif  /* C63_C63_H_ */

@@ -12,7 +12,7 @@ LOCAL_ADAPTER_NO ?= 0
 CCFLAGS = -Wall -march=native
 NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
 PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
-LDFLAGS = -lm
+LDFLAGS = -lm -lpthread
 
 ifeq ($(DEBUG),1)
 	CCFLAGS += -Og -g -pg

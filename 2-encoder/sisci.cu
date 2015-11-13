@@ -30,8 +30,6 @@ static local_ack_t writer_ack;
 // Writer
 static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
-static sci_local_data_interrupt_t interruptFromWriter;
-static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
 static int callback_arg[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
 static sci_local_segment_t encodedDataSegmentsLocal[NUM_IMAGE_SEGMENTS];
@@ -95,40 +93,14 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 		SCICreateDMAQueue(writer_sds[i], &dmaQueues[i], localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
-
-	unsigned int interruptFromWriterNo = DATA_WRITTEN;
-	SCICreateDataInterrupt(writer_sds[0], &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
-					NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
-
-	// Interrupts to the writer
-	printf("Connecting to interrupt on writer... ");
-	fflush(stdout);
-	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		do
-		{
-			SCIConnectDataInterrupt(writer_sds[i], &interruptsToWriter[i], writerNodeId, localAdapterNo,
-					ENCODED_FRAME_TRANSFERRED + i, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-		}
-		while (error != SCI_ERR_OK);
-	}
-	printf("Done!\n");
 }
 
 void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	do {
-		SCIRemoveDataInterrupt(interruptFromWriter, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-
-
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		SCIDisconnectDataInterrupt(interruptsToWriter[i], SCI_NO_FLAGS, &error);
-		sisci_check(error);
 
 		SCIRemoveDMAQueue(dmaQueues[i], SCI_NO_FLAGS, &error);
 
@@ -305,16 +277,6 @@ void init_remote_encoded_data_segment(int segNum)
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
 }
 
-void get_pointers(struct frame *frame, int segNum) {
-	frame->mbs[Y_COMPONENT] = (struct macroblock*)mb_Y[segNum];
-	frame->mbs[U_COMPONENT] = (struct macroblock*)mb_U[segNum];
-	frame->mbs[V_COMPONENT] = (struct macroblock*)mb_V[segNum];
-
-	frame->residuals->Ydct = (int16_t*)residuals_Y[segNum];
-	frame->residuals->Udct = (int16_t*)residuals_U[segNum];
-	frame->residuals->Vdct = (int16_t*)residuals_V[segNum];
-}
-
 
 void init_local_encoded_data_segments() {
 	sci_error_t error;
@@ -421,9 +383,8 @@ void receive_width_and_height(uint32_t* width, uint32_t* height)
 
 void send_width_and_height(uint32_t width, uint32_t height) {
 	sci_error_t error;
-
-	uint32_t widthAndHeight[2] = {width, height};
-	SCITriggerDataInterrupt(interruptsToWriter[0], (void*) &widthAndHeight, 2*sizeof(uint32_t), SCI_NO_FLAGS, &error);
+	uint32_t widthAndHeight[2] = { width, height };
+	SCIMemCpy(writer_syn.sequence, &widthAndHeight, writer_syn.map, 0, sizeof(message_t), SCI_FLAG_ERROR_CHECK, &error);
 	sisci_assert(error);
 }
 
@@ -447,26 +408,12 @@ int wait_for_reader(int32_t frameNum)
 	return 0;
 }
 
-/*
-void wait_for_writer(int segNum)
-{
-	sci_error_t error;
-
-	int ack;
-	unsigned int length = sizeof(int);
-	do {
-		SCIWaitForDataInterrupt(interruptFromWriter, &ack, &length, SCI_INFINITE_TIMEOUT,
-				SCI_NO_FLAGS, &error);
-		sisci_assert(error);
-	} while (ack != segNum);
-}*/
 
 void wait_for_writer(int32_t frameNum, int offset)
 {
 	sci_error_t error;
-
 	do {
-		SCIWaitForLocalSegmentEvent(writer_ack.segment, &writerNodeId, &localAdapterNo, 0,
+		SCIWaitForLocalSegmentEvent(writer_ack.segment, &writerNodeId, &localAdapterNo, 1,
 				SCI_NO_FLAGS, &error);
 		if (writer_ack.msg->frameNum >= (frameNum-offset)) {
 			break;
@@ -475,7 +422,7 @@ void wait_for_writer(int32_t frameNum, int offset)
 }
 
 
-sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
+static sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
 	sci_callback_action_t retVal;
 
 	if (status == SCI_ERR_OK) {
@@ -554,26 +501,8 @@ void signal_reader(int32_t frameNum)
 	SCIMemCpy(reader_ack.sequence, &msg, reader_ack.map, 0, sizeof(message_t), SCI_FLAG_ERROR_CHECK, &error);
 	sisci_assert(error);
 }
-/*
-void signal_writer(writer_signal signal, int segNum)
-{
-	sci_error_t error;
 
-	uint8_t data;
 
-	switch (signal) {
-		case ENCODING_FINISHED:
-			data = 1;
-			break;
-		case DATA_TRANSFERRED:
-			data = 0;
-			break;
-	}
-
-	SCITriggerDataInterrupt(interruptsToWriter[segNum], (void*) &data, sizeof(uint8_t), SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-*/
 void signal_writer(writer_signal signal, int32_t frameNum)
 {
 	sci_error_t error;

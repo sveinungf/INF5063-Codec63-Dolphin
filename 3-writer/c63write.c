@@ -181,6 +181,7 @@ int main(int argc, char **argv)
   }
 
   init_SISCI(localAdapterNo, encoderNodeId);
+  init_msg_segments();
 
   receive_width_and_height(&width, &height);
 
@@ -194,14 +195,12 @@ int main(int argc, char **argv)
 		  (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2))*sizeof(struct macroblock) +
 		  (cms[0]->ypw*cms[0]->yph + cms[0]->upw*cms[0]->uph + cms[0]->vpw*cms[0]->vph) * sizeof(int16_t);
 
-  local_buffers[0] = init_local_segment(localSegmentSize, 0);
-  local_buffers[1] = init_local_segment(localSegmentSize, 1);
+  int i;
+  for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+	  local_buffers[i] = init_local_segment(localSegmentSize, i);
+	  set_offsets_and_pointers(cms[i], i);
+  }
 
-  set_offsets_and_pointers(cms[0], 0);
-  set_offsets_and_pointers(cms[1], 1);
-
-  /* Encode input frames */
-  int numframes = 0;
 
   uint8_t done = 0;
   unsigned int length = sizeof(uint8_t);
@@ -210,14 +209,15 @@ int main(int argc, char **argv)
   pthread_t child;
   pthread_create(&child, NULL, flush, NULL);
 
+  /* Encode input frames */
+  int32_t frameNum = 0;
   int segNum = 0;
-
   while (1)
   {
-	  printf("Frame %d:", numframes);
+	  printf("Frame %d:", frameNum);
 	  fflush(stdout);
 
-	  wait_for_encoder(&done, &length, segNum);
+	  wait_for_encoder(&done, frameNum);
 
 	  if (!done)
 	  {
@@ -236,13 +236,13 @@ int main(int argc, char **argv)
 
 
 	  // Signal encoder that writer is ready for a new frame
-	  signal_encoder(segNum);
+	  signal_encoder(frameNum);
 
 	  // Flush
 	  pthread_cond_signal(&cond);
 
 	  printf(", written\n");
-	  ++numframes;
+	  ++frameNum;
 
 	  segNum ^= 1;
   }
@@ -254,8 +254,7 @@ int main(int argc, char **argv)
 
   cleanup_SISCI();
 
-  int i;
-  for (i = 0; i < 2; ++i) {
+  for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 	  free(cms[i]->curframe->residuals);
 	  free(cms[i]->curframe);
 	  free(cms[i]);

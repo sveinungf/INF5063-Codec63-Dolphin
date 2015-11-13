@@ -1,6 +1,7 @@
 #include "sisci.h"
 #include "sisci_errchk.h"
 
+#include <string.h>
 
 // Local
 static unsigned int localAdapterNo;
@@ -11,20 +12,24 @@ static sci_local_segment_t localImageSegments[NUM_IMAGE_SEGMENTS];
 static sci_map_t localImageMaps[NUM_IMAGE_SEGMENTS];
 
 static unsigned int imageSize;
-static int callback_arg[NUM_IMAGE_SEGMENTS];
+static uint32_t callback_arg[NUM_IMAGE_SEGMENTS];
 
 // Encoder
 static unsigned int encoderNodeId;
-static sci_local_data_interrupt_t interruptFromEncoder;
-static sci_remote_data_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t remoteImageSegments[NUM_IMAGE_SEGMENTS];
 
 //Message protocol
-static sci_desc_t msg_sd;
-static sci_local_segment_t msg_segment;
-static sci_map_t msg_map;
-static volatile uint8_t *msg_buffer;
-static int seg_offsets[NUM_IMAGE_SEGMENTS] = {0, sizeof(uint32_t)};
+static sci_desc_t syn_sd;
+static sci_remote_segment_t syn_segment;
+static sci_map_t syn_map;
+static volatile message_t *syn_info;
+static sci_sequence_t syn_sequence;
+
+static sci_desc_t ack_sd;
+static sci_local_segment_t ack_segment;
+static sci_map_t ack_map;
+static volatile message_t *ack_info;
+
 
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 {
@@ -41,7 +46,10 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 		sisci_assert(error);
 	}
 
-	SCIOpen(&msg_sd, SCI_NO_FLAGS, &error);
+	SCIOpen(&syn_sd, SCI_NO_FLAGS, &error);
+		sisci_assert(error);
+
+	SCIOpen(&ack_sd, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
 	SCIGetLocalNodeId(localAdapterNo, &localNodeId, SCI_NO_FLAGS, &error);
@@ -52,42 +60,11 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 		SCICreateDMAQueue(sds[i], &dmaQueues[i], localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
-
-	unsigned int interruptFromEncoderNo = READY_FOR_ORIG_TRANSFER;
-	SCICreateDataInterrupt(sds[0], &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo,
-			SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
-
-
-	// Interrupts to the encoder
-	printf("Connecting to interrupts on encoder... ");
-	fflush(stdout);
-
-	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		do
-		{
-			SCIConnectDataInterrupt(sds[i], &interruptsToEncoder[i], encoderNodeId, localAdapterNo,
-					MORE_DATA_TRANSFERRED + i, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-		}
-		while (error != SCI_ERR_OK);
-	}
-	printf("Done!\n");
 }
 
 void cleanup_SISCI()
 {
 	sci_error_t error;
-
-	SCIDisconnectDataInterrupt(interruptsToEncoder[0], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-	SCIDisconnectDataInterrupt(interruptsToEncoder[1], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
-	do
-	{
-		SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
 
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
@@ -98,31 +75,48 @@ void cleanup_SISCI()
 		sisci_check(error);
 	}
 
-	SCIClose(msg_sd, SCI_NO_FLAGS, &error);
+	SCIClose(syn_sd, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIClose(ack_sd, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
 	SCITerminate();
 }
 
-volatile uint8_t *init_msg_segment() {
+void init_msg_segments() {
 	sci_error_t error;
+	unsigned int segmentSize = sizeof(message_t);
 
-	uint32_t localSegmentId = getLocalSegId(localNodeId, encoderNodeId, SEGMENT_MSG_PROT);
-	unsigned int segmentSize = 2*sizeof(int);
-	SCICreateSegment(msg_sd, &msg_segment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL,
+	// Syn segment
+	uint32_t remoteSegmentId = getRemoteSegId(localNodeId, encoderNodeId, SEGMENT_SYN);
+	do	{
+		SCIConnectSegment(syn_sd, &syn_segment, encoderNodeId, remoteSegmentId, localAdapterNo,
+				SCI_NO_CALLBACK, NULL, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	} while (error != SCI_ERR_OK);
+
+	syn_info = (message_t*)SCIMapRemoteSegment(syn_segment, &syn_map, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	SCICreateMapSequence(syn_map, &syn_sequence, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+
+	/// Ack segment
+	uint32_t localSegmentId = getLocalSegId(localNodeId, encoderNodeId, SEGMENT_ACK);
+	SCICreateSegment(ack_sd, &ack_segment, localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL,
 			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	msg_buffer = (uint8_t*)SCIMapLocalSegment(msg_segment, &msg_map, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	ack_info = (message_t*)SCIMapLocalSegment(ack_segment, &ack_map, 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+	memset((void*)ack_info, -1, sizeof(message_t));
+
+	SCIPrepareSegment(ack_segment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 
-	SCIPrepareSegment(msg_segment, localAdapterNo, SCI_NO_FLAGS, &error);
+	SCISetSegmentAvailable(ack_segment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_assert(error);
-
-	SCISetSegmentAvailable(msg_segment, localAdapterNo, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-
-	return msg_buffer;
 }
 
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV, int segNum)
@@ -178,10 +172,17 @@ void cleanup_segments()
 		sisci_check(error);
 	}
 
-	SCIUnmapSegment(msg_map, SCI_NO_FLAGS, &error);
+	SCIRemoveSequence(syn_sequence, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+	SCIUnmapSegment(syn_map, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+	SCIDisconnectSegment(syn_segment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 
-	SCIRemoveSegment(msg_segment, SCI_NO_FLAGS, &error);
+	SCIUnmapSegment(ack_map, SCI_NO_FLAGS, &error);
+	sisci_check(error);
+
+	SCIRemoveSegment(ack_segment, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 }
 
@@ -190,39 +191,21 @@ void send_width_and_height(uint32_t width, uint32_t height)
 	sci_error_t error;
 
 	uint32_t widthAndHeight[2] = { width, height };
-	SCITriggerDataInterrupt(interruptsToEncoder[0], (void*) &widthAndHeight, 2 * sizeof(uint32_t),
-			SCI_NO_FLAGS, &error);
+	SCIMemCpy(syn_sequence, &widthAndHeight, syn_map, 0, sizeof(message_t), SCI_FLAG_ERROR_CHECK, &error);
 	sisci_assert(error);
 }
-/*
-void wait_for_encoder(int segNum)
-{
-	sci_error_t error;
-	int ack;
-	unsigned int length = sizeof(int);
-	do {
-		SCIWaitForDataInterrupt(interruptFromEncoder, &ack, &length, SCI_INFINITE_TIMEOUT,
-				SCI_NO_FLAGS, &error);
-		sisci_assert(error);
-	} while (ack != segNum);
-}
-*/
 
-void wait_for_encoder(int segNum)
+void wait_for_encoder(int32_t frameNum, int offset)
 {
 	sci_error_t error;
 
-	int *ack = (int*)(msg_buffer + seg_offsets[segNum]);
-
 	do {
-		SCIWaitForLocalSegmentEvent(msg_segment, &encoderNodeId, &localAdapterNo, 1,
+		SCIWaitForLocalSegmentEvent(ack_segment, &encoderNodeId, &localAdapterNo, 1,
 				SCI_NO_FLAGS, &error);
-		if (*ack == 1) {
+		if (ack_info->frameNum >= (frameNum-offset)) {
 			break;
 		}
 	} while(error != SCI_ERR_OK);
-
-	*ack = 0;
 }
 
 sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
@@ -243,11 +226,11 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 	return retVal;
 }
 
-void transfer_image_async(int segNum)
+void transfer_image_async(int segNum, int32_t frameNum)
 {
 	sci_error_t error;
 
-	callback_arg[segNum] = segNum;
+	callback_arg[segNum] = frameNum;
 
 	SCIStartDmaTransfer(dmaQueues[segNum], localImageSegments[segNum], remoteImageSegments[segNum], 0, imageSize, 0, dma_callback, &callback_arg[segNum], SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
@@ -261,21 +244,23 @@ void wait_for_image_transfer(int segNum)
 	sisci_assert(error);
 }
 
-void signal_encoder(encoder_signal signal, int segNum)
+
+void signal_encoder(encoder_signal signal, int frameNum)
 {
 	sci_error_t error;
 
-	uint8_t data;
+	message_t info;
+	info.frameNum = frameNum;
 
 	switch (signal) {
 		case IMAGE_TRANSFERRED:
-			data = 0;
+			info.status = 0;
 			break;
 		case NO_MORE_FRAMES:
-			data = 1;
+			info.status = 1;
 			break;
 	}
 
-	SCITriggerDataInterrupt(interruptsToEncoder[segNum], (void*) &data, sizeof(uint8_t), SCI_NO_FLAGS, &error);
+	SCIMemCpy(syn_sequence, &info, syn_map, 0, sizeof(message_t), SCI_FLAG_ERROR_CHECK, &error);
 	sisci_assert(error);
 }

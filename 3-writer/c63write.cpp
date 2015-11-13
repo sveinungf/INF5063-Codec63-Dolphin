@@ -23,6 +23,10 @@ extern "C" {
 using namespace std;
 
 
+static const int Y = Y_COMPONENT;
+static const int U = U_COMPONENT;
+static const int V = V_COMPONENT;
+
 struct c63_common *cms[NUM_IMAGE_SEGMENTS];
 static volatile uint8_t *local_buffers[NUM_IMAGE_SEGMENTS];
 static uint32_t keyframe_offset;
@@ -57,14 +61,18 @@ struct c63_common* init_c63_enc()
   cm->padw[V_COMPONENT] = cm->vpw = (uint32_t)(ceil(width*VX/(YX*8.0f))*8);
   cm->padh[V_COMPONENT] = cm->vph = (uint32_t)(ceil(height*VY/(YY*8.0f))*8);
 
-  cm->mb_cols = cm->ypw / 8;
-  cm->mb_rows = cm->yph / 8;
+  cm->mb_cols[Y] = cm->ypw / 8;
+  cm->mb_cols[U] = cm->mb_cols[Y] / 2;
+  cm->mb_cols[V] = cm->mb_cols[U];
+
+  cm->mb_rows[Y] = cm->yph / 8;
+  cm->mb_rows[U] = cm->mb_rows[Y] / 2;
+  cm->mb_rows[V] = cm->mb_rows[U];
 
   /* Quality parameters -- Home exam deliveries should have original values,
    i.e., quantization factor should be 25, search range should be 16, and the
    keyframe interval should be 100. */
   cm->qp = 25;                  // Constant quantization factor. Range: [1..50]
-  cm->me_search_range = 16;     // Pixels in every direction
   cm->keyframe_interval = 100;  // Distance between keyframes
 
   /* Initialize quantization tables */
@@ -86,10 +94,10 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	keyframe_offset = 0;
 
 	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows*cm->mb_cols*sizeof(struct macroblock);
-	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows[Y]*cm->mb_cols[Y]*sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows[U]*cm->mb_cols[U]*sizeof(struct macroblock);
 
-	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows/2*cm->mb_cols/2*sizeof(struct macroblock);
+	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows[V]*cm->mb_cols[V]*sizeof(struct macroblock);
 	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
 	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
 
@@ -195,9 +203,11 @@ int main(int argc, char **argv)
   cms[0]->e_ctx.fp = outfile;
   cms[1]->e_ctx.fp = cms[0]->e_ctx.fp;
 
-  uint32_t localSegmentSize = sizeof(int) + (cms[0]->mb_rows * cms[0]->mb_cols + (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2) +
-		  (cms[0]->mb_rows/2)*(cms[0]->mb_cols/2))*sizeof(struct macroblock) +
-		  (cms[0]->ypw*cms[0]->yph + cms[0]->upw*cms[0]->uph + cms[0]->vpw*cms[0]->vph) * sizeof(int16_t);
+  uint32_t localSegmentSize = sizeof(int);
+  for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+	  localSegmentSize += cms[0]->mb_cols[c] * cms[0]->mb_rows[c] * sizeof(struct macroblock);
+	  localSegmentSize += cms[0]->padw[c] * cms[0]->padh[c] * sizeof(int16_t);
+  }
 
   local_buffers[0] = init_local_segment(localSegmentSize, 0);
   local_buffers[1] = init_local_segment(localSegmentSize, 1);

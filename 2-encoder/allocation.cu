@@ -1,5 +1,6 @@
 #include "allocation.h"
 #include "sisci_common.h"
+#include "cuda/c63_cuda.h"
 #include "cuda/dsp.h"
 #include "cuda/me.h"
 

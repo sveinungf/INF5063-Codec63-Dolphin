@@ -156,6 +156,7 @@ void signal_encoder(int32_t frameNum)
 
 	SCIMemCpy(encoder_ack.sequence, &msg, encoder_ack.map, 0, sizeof(message_t), SCI_NO_FLAGS, &error);
 	sisci_assert(error);
+	//SCIFlush(encoder_ack.sequence, SCI_NO_FLAGS);
 }
 
 void cleanup_SISCI() {

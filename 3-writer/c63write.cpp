@@ -51,6 +51,9 @@ pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t mut2 = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond2 = PTHREAD_COND_INITIALIZER;
 
+pthread_mutex_t mut3 = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond3 = PTHREAD_COND_INITIALIZER;
+
 int thread_done = 0;
 int fd;
 
@@ -129,19 +132,30 @@ static void *flush(void *arg) {
 	pthread_mutex_lock(&mut);
 	while (thread_done == 0) {
 		pthread_cond_wait(&cond, &mut);
+		pthread_mutex_lock(&mut2);
 		thread_writing = 1;
+		pthread_mutex_unlock(&mut2);
+
+
 
 		cms[0]->curframe->keyframe = ((int*) local_buffers[0])[keyframe_offset];
 		byte_vectors[0] = write_frame_to_buffer(cms[0]);
+
+		pthread_mutex_lock(&mut3);
+		while (main_writing) {
+			pthread_cond_wait(&cond3, &mut3);
+		}
+		pthread_mutex_unlock(&mut3);
 		signal_encoder(thread_frameNum);
 		write_buffer_to_file(byte_vectors[0], cms[0]->e_ctx.fp);
-		pthread_mutex_lock(&mut2);
-		thread_writing = 0;
-		//printf("signal for 0\n");
-		pthread_cond_signal(&cond2);
-		pthread_mutex_unlock(&mut2);
 
 		fsync(fd);
+		pthread_mutex_lock(&mut2);
+		thread_writing = 0;
+		pthread_mutex_unlock(&mut2);
+
+		//printf("signal for 0\n");
+		pthread_cond_signal(&cond2);
 
 	}
 	pthread_mutex_unlock(&mut);
@@ -277,8 +291,8 @@ int main(int argc, char **argv)
 
   	  if(segNum == 0) {
   		  if (frameNum > 0) {
+  			  pthread_mutex_lock(&mut2);
   			  while(thread_writing) {
-  				  pthread_mutex_lock(&mut2);
   				  //printf("wait for 11\n");
   				  pthread_cond_wait(&cond2, &mut2);
   			  }
@@ -293,8 +307,8 @@ int main(int argc, char **argv)
   		  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
   		  byte_vectors[segNum] = write_frame_to_buffer(cms[segNum]);
 
+  		  pthread_mutex_lock(&mut2);
   		  while(thread_writing) {
-			  pthread_mutex_lock(&mut2);
 			  //printf("wait for 12\n");
 			  pthread_cond_wait(&cond2, &mut2);
 		  }
@@ -302,7 +316,14 @@ int main(int argc, char **argv)
 		  pthread_mutex_unlock(&mut2);
   		  signal_encoder(frameNum);
 
+  		  pthread_mutex_lock(&mut3);
+  		  main_writing = 1;
+  		  pthread_mutex_unlock(&mut3);
   		  write_buffer_to_file(byte_vectors[segNum], cms[segNum]->e_ctx.fp);
+  		  pthread_mutex_lock(&mut3);
+  		  main_writing = 0;
+  		  pthread_mutex_unlock(&mut3);
+  		  pthread_cond_signal(&cond3);
   	  }
   		  //cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
@@ -327,17 +348,17 @@ int main(int argc, char **argv)
 
 	  segNum ^= 1;
   }
+  pthread_mutex_lock(&mut2);
   while(thread_writing) {
-		  pthread_mutex_lock(&mut2);
 		  printf("wait for 12\n");
 		  pthread_cond_wait(&cond2, &mut2);
   }
   pthread_mutex_unlock(&mut2);
 
-  //pthread_mutex_lock(&mut);
+  pthread_mutex_lock(&mut);
   thread_done = 1;
+  pthread_mutex_unlock(&mut);
   pthread_cond_signal(&cond);
-  //pthread_mutex_unlock(&mut);
 
   cleanup_SISCI();
 

@@ -17,14 +17,14 @@ uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
 // Reader
 unsigned int readerNodeId;
 sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
-sci_remote_data_interrupt_t interruptToReader;
+sci_remote_interrupt_t interruptsToReader[NUM_IMAGE_SEGMENTS];
 sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_local_segment_t))));
 sci_map_t imageMaps[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_map_t))));
 
 // Writer
 static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
-static sci_local_data_interrupt_t interruptFromWriter;
+static sci_local_interrupt_t interruptsFromWriter[NUM_IMAGE_SEGMENTS];
 static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
 static int callback_arg[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
@@ -104,20 +104,25 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 		sisci_assert(error);
 	}
 
-	unsigned int interruptFromWriterNo = DATA_WRITTEN;
-	SCICreateDataInterrupt(writer_sds[0], &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
-					NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
+	unsigned int interruptFromWriterNo;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		interruptFromWriterNo = DATA_WRITTEN + i;
+		SCICreateInterrupt(writer_sds[i], &interruptsFromWriter[i], localAdapterNo, &interruptFromWriterNo, NULL,
+				NULL, SCI_FLAG_FIXED_INTNO, &error);
+		sisci_assert(error);
+	}
 
 	// Interrupts to the reader
 	printf("Connecting to interrupt on reader... ");
 	fflush(stdout);
-	do
-	{
-		SCIConnectDataInterrupt(reader_sds[0], &interruptToReader, readerNodeId, localAdapterNo,
-				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		do
+		{
+			SCIConnectInterrupt(reader_sds[i], &interruptsToReader[i], readerNodeId, localAdapterNo,
+					READY_FOR_ORIG_TRANSFER + i, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		}
+		while (error != SCI_ERR_OK);
 	}
-	while (error != SCI_ERR_OK);
 	printf("Done!\n");
 
 	// Interrupts to the writer
@@ -138,17 +143,17 @@ void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	SCIDisconnectDataInterrupt(interruptToReader, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(interruptsToReader[0], SCI_NO_FLAGS, &error);
 	sisci_check(error);
-
-	do {
-		SCIRemoveDataInterrupt(interruptFromWriter, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-
+	SCIDisconnectInterrupt(interruptsToReader[1], SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		do {
+			SCIRemoveInterrupt(interruptsFromWriter[i], SCI_NO_FLAGS, &error);
+		} while (error != SCI_ERR_OK);
+
 		SCIDisconnectDataInterrupt(interruptsToWriter[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 
@@ -377,13 +382,9 @@ void wait_for_writer(int segNum)
 {
 	sci_error_t error;
 
-	int ack;
-	unsigned int length = sizeof(int);
-	do {
-		SCIWaitForDataInterrupt(interruptFromWriter, &ack, &length, SCI_INFINITE_TIMEOUT,
-				SCI_NO_FLAGS, &error);
-		sisci_assert(error);
-	} while (ack != segNum);
+	SCIWaitForInterrupt(interruptsFromWriter[segNum], SCI_INFINITE_TIMEOUT,
+			SCI_NO_FLAGS, &error);
+	sisci_assert(error);
 }
 
 
@@ -417,6 +418,11 @@ void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
 	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizeV);
 }
 
+void cuda_copy_to_segment(struct c63_common *cm, int segNum) {
+	cudaMemcpy(mb_Y[segNum], cm->curframe->mbs_gpu[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV, cudaMemcpyDeviceToHost);
+	cudaMemcpy(residuals_Y[segNum], cm->curframe->residuals_gpu->Ydct, residualsSizeY+residualsSizeU+residualsSizeV, cudaMemcpyDeviceToHost);
+}
+
 void transfer_encoded_data(int keyframe_val, int segNum)
 {
 	sci_error_t error;
@@ -446,8 +452,7 @@ void signal_reader(int segNum)
 {
 	sci_error_t error;
 
-	int ack = segNum;
-	SCITriggerDataInterrupt(interruptToReader, (void*) &ack, sizeof(int), SCI_NO_FLAGS, &error);
+	SCITriggerInterrupt(interruptsToReader[segNum], SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
 

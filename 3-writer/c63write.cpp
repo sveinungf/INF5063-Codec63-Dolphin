@@ -200,9 +200,6 @@ int main(int argc, char **argv)
   cms[0] = init_c63_enc();
   cms[1] = init_c63_enc();
 
-  cms[0]->e_ctx.fp = outfile;
-  cms[1]->e_ctx.fp = cms[0]->e_ctx.fp;
-
   uint32_t localSegmentSize = sizeof(int);
   for (int c = 0; c < COLOR_COMPONENTS; ++c) {
 	  localSegmentSize += cms[0]->mb_cols[c] * cms[0]->mb_rows[c] * sizeof(struct macroblock);
@@ -248,7 +245,7 @@ int main(int argc, char **argv)
 	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
 	  vector<uint8_t> byte_vector = write_frame_to_buffer(cms[segNum]);
-	  write_buffer_to_file(byte_vector, cms[segNum]->e_ctx.fp);
+	  write_buffer_to_file(byte_vector, outfile);
 
 	  // Signal encoder that writer is ready for a new frame
 	  signal_encoder(segNum);

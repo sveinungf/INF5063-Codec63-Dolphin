@@ -13,7 +13,10 @@
 
 using namespace std;
 
+
 int frequencies[2][12];
+static unsigned int bit_buffer = 0;
+static unsigned int bit_buffer_width = 0;
 
 static inline void put_byte(vector<uint8_t>& byte_vector, int byte)
 {
@@ -34,7 +37,7 @@ static inline void put_bytes(vector<uint8_t>& byte_vector, const void* data, uns
  * in order to write any remaining bits in the buffer before
  * writing using another function.
  */
-static inline void put_bits(struct entropy_ctx *c, vector<uint8_t>& byte_vector, uint16_t bits,
+static inline void put_bits(vector<uint8_t>& byte_vector, uint16_t bits,
 		uint8_t n)
 {
 	assert(n <= 24 && "Error writing bit");
@@ -44,13 +47,13 @@ static inline void put_bits(struct entropy_ctx *c, vector<uint8_t>& byte_vector,
 		return;
 	}
 
-	c->bit_buffer <<= n;
-	c->bit_buffer |= bits & ((1 << n) - 1);
-	c->bit_buffer_width += n;
+	bit_buffer <<= n;
+	bit_buffer |= bits & ((1 << n) - 1);
+	bit_buffer_width += n;
 
-	while (c->bit_buffer_width >= 8)
+	while (bit_buffer_width >= 8)
 	{
-		uint8_t b = (uint8_t) (c->bit_buffer >> (c->bit_buffer_width - 8));
+		uint8_t b = (uint8_t) (bit_buffer >> (bit_buffer_width - 8));
 
 		put_byte(byte_vector, b);
 
@@ -59,18 +62,18 @@ static inline void put_bits(struct entropy_ctx *c, vector<uint8_t>& byte_vector,
 			put_byte(byte_vector, 0);
 		}
 
-		c->bit_buffer_width -= 8;
+		bit_buffer_width -= 8;
 	}
 }
 
 /**
  * Flushes the bitBuffer by writing zeroes to fill a full byte
  */
-static inline void flush_bits(struct entropy_ctx *c, vector<uint8_t>& byte_vector)
+static inline void flush_bits(vector<uint8_t>& byte_vector)
 {
-	if (c->bit_buffer > 0)
+	if (bit_buffer > 0)
 	{
-		uint8_t b = c->bit_buffer << (8 - c->bit_buffer_width);
+		uint8_t b = bit_buffer << (8 - bit_buffer_width);
 		put_byte(byte_vector, b);
 
 		if (b == 0xff)
@@ -79,8 +82,8 @@ static inline void flush_bits(struct entropy_ctx *c, vector<uint8_t>& byte_vecto
 		}
 	}
 
-	c->bit_buffer = 0;
-	c->bit_buffer_width = 0;
+	bit_buffer = 0;
+	bit_buffer_width = 0;
 }
 
 /* Start of Image (SOI) marker, contains no payload. */
@@ -249,7 +252,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 			+ uoffset / 8];
 
 	/* Use inter pred? */
-	put_bits(&cm->e_ctx, byte_vector, mb->use_mv, 1);
+	put_bits(byte_vector, mb->use_mv, 1);
 
 	if (mb->use_mv)
 	{
@@ -260,7 +263,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 			reuse_prev_mv = 1;
 		}
 
-		put_bits(&cm->e_ctx, byte_vector, reuse_prev_mv, 1);
+		put_bits(byte_vector, reuse_prev_mv, 1);
 
 		if (!reuse_prev_mv)
 		{
@@ -275,8 +278,8 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 				--val;
 			}
 
-			put_bits(&cm->e_ctx, byte_vector, MVVLC[sz], MVVLC_Size[sz]);
-			put_bits(&cm->e_ctx, byte_vector, val, sz);
+			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz]);
+			put_bits(byte_vector, val, sz);
 			/* ++frequencies[cc][sz]; */
 
 			/* Encode MV y-coord */
@@ -287,8 +290,8 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 				--val;
 			}
 
-			put_bits(&cm->e_ctx, byte_vector, MVVLC[sz], MVVLC_Size[sz]);
-			put_bits(&cm->e_ctx, byte_vector, val, sz);
+			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz]);
+			put_bits(byte_vector, val, sz);
 			/* ++frequencies[cc][sz]; */
 		}
 	}
@@ -322,13 +325,13 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 	*prev_DC = block[0];
 
 	uint8_t size = bit_width(dc);
-	put_bits(&cm->e_ctx, byte_vector, DCVLC[cc][size], DCVLC_Size[cc][size]);
+	put_bits(byte_vector, DCVLC[cc][size], DCVLC_Size[cc][size]);
 
 	if (dc < 0)
 	{
 		dc = dc - 1;
 	}
-	put_bits(&cm->e_ctx, byte_vector, dc, size);
+	put_bits(byte_vector, dc, size);
 
 	/* find the last nonzero entry of the ac-coefficients */
 	for (j = 64; j > 1 && !block[j - 1]; j--)
@@ -342,14 +345,14 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 		{
 			if (++num_ac == 16)
 			{
-				put_bits(&cm->e_ctx, byte_vector, ACVLC[cc][15][0], ACVLC_Size[cc][15][0]);
+				put_bits(byte_vector, ACVLC[cc][15][0], ACVLC_Size[cc][15][0]);
 				num_ac = 0;
 			}
 		}
 		else
 		{
 			uint8_t size = bit_width(ac);
-			put_bits(&cm->e_ctx, byte_vector, ACVLC[cc][num_ac][size],
+			put_bits(byte_vector, ACVLC[cc][num_ac][size],
 					ACVLC_Size[cc][num_ac][size]);
 
 			if (ac < 0)
@@ -357,7 +360,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 				--ac;
 			}
 
-			put_bits(&cm->e_ctx, byte_vector, ac, size);
+			put_bits(byte_vector, ac, size);
 			num_ac = 0;
 		}
 	}
@@ -365,7 +368,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 	/* Put end of block marker */
 	if (j < 64)
 	{
-		put_bits(&cm->e_ctx, byte_vector, ACVLC[cc][0][0], ACVLC_Size[cc][0][0]);
+		put_bits(byte_vector, ACVLC[cc][0][0], ACVLC_Size[cc][0][0]);
 	}
 }
 
@@ -418,7 +421,7 @@ static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_
 		}
 	}
 
-	flush_bits(&cm->e_ctx, byte_vector);
+	flush_bits(byte_vector);
 }
 
 vector<uint8_t> write_frame_to_buffer(struct c63_common *cm)

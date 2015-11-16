@@ -316,18 +316,18 @@ int main(int argc, char **argv)
 
 #if Y_ON_GPU
 		// Wait until the GPU has finished encoding
-		cudaStreamSynchronize(c63_cuda.stream[Y]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[Y]);
 #else
 		// Or wait until the SIMD thread has finished encoding
 		pthread_cond_wait(&cond_frame_encoded[Y], &mutex_simd[Y]);
 #endif
 #if U_ON_GPU
-		cudaStreamSynchronize(c63_cuda.stream[U]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[U]);
 #else
 		pthread_cond_wait(&cond_frame_encoded[U], &mutex_simd[U]);
 #endif
 #if V_ON_GPU
-		cudaStreamSynchronize(c63_cuda.stream[V]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[V]);
 #else
 		pthread_cond_wait(&cond_frame_encoded[V], &mutex_simd[V]);
 #endif

@@ -376,7 +376,13 @@ void gpu::c63_motion_estimate(struct c63_common *cm, const struct c63_common_gpu
 	}
 
 	set_motion_vectors<range><<<cols, rows, 0, stream>>>(mb_gpu, bound.left, bound.top, sad_indexes);
-	cudaMemcpyAsync(mb, mb_gpu, cols * rows * sizeof(struct macroblock), cudaMemcpyDeviceToHost, stream);
+
+	cudaEvent_t me_done = c63_cuda.me_done[component];
+	cudaEventRecord(me_done, stream);
+
+	cudaStream_t memcpy_stream = c63_cuda.memcpy_stream[component];
+	cudaStreamWaitEvent(memcpy_stream, me_done, 0);
+	cudaMemcpyAsync(mb, mb_gpu, cols * rows * sizeof(struct macroblock), cudaMemcpyDeviceToHost, memcpy_stream);
 }
 
 /* Motion compensation for 8x8 block */

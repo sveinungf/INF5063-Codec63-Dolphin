@@ -32,7 +32,7 @@ static sci_local_segment_t encodedDataSegmentsLocal[NUM_IMAGE_SEGMENTS];
 static sci_map_t encodedDataMapsLocal[NUM_IMAGE_SEGMENTS];
 static sci_dma_queue_t dmaQueues[NUM_IMAGE_SEGMENTS];
 
-static int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
+static volatile int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
 
 static unsigned int keyframeSize;
 static unsigned int mbSizeY;
@@ -388,7 +388,7 @@ void wait_for_writer(int segNum)
 }
 
 
-sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
+sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t status) {
 	sci_callback_action_t retVal;
 
 	if (status == SCI_ERR_OK) {
@@ -409,8 +409,6 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 }
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
-	wait_for_image_transfer(segNum);
-
 	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
 	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
 	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);

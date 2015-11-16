@@ -100,7 +100,7 @@ static inline void c63_encode_image_host()
 }
 
 template<int component>
-static void* thread_c63_encode_image_host(void* arg)
+static void* thread_c63_encode_image_host(void*)
 {
 	pthread_mutex_lock(&mutex_parent[component]);
 	while (!thread_done) {
@@ -181,7 +181,7 @@ static void print_help()
 	exit(EXIT_FAILURE);
 }
 
-void interrupt_handler(int signal)
+void interrupt_handler(int)
 {
 	SCITerminate();
 	exit(EXIT_FAILURE);
@@ -316,18 +316,18 @@ int main(int argc, char **argv)
 
 #if Y_ON_GPU
 		// Wait until the GPU has finished encoding
-		cudaStreamSynchronize(c63_cuda.stream[Y]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[Y]);
 #else
 		// Or wait until the SIMD thread has finished encoding
 		pthread_cond_wait(&cond_frame_encoded[Y], &mutex_simd[Y]);
 #endif
 #if U_ON_GPU
-		cudaStreamSynchronize(c63_cuda.stream[U]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[U]);
 #else
 		pthread_cond_wait(&cond_frame_encoded[U], &mutex_simd[U]);
 #endif
 #if V_ON_GPU
-		cudaStreamSynchronize(c63_cuda.stream[V]);
+		cudaStreamSynchronize(c63_cuda.memcpy_stream[V]);
 #else
 		pthread_cond_wait(&cond_frame_encoded[V], &mutex_simd[V]);
 #endif

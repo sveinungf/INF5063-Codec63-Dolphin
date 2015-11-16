@@ -22,9 +22,7 @@ extern "C" {
 
 using namespace std;
 
-typedef struct test_thread {
-	vector<uint8_t> *byte_vectors[NUM_IMAGE_SEGMENTS];
-} test_t;
+static volatile int next_to_write = 0;
 
 
 static const int Y = Y_COMPONENT;
@@ -35,30 +33,26 @@ struct c63_common *cms[NUM_IMAGE_SEGMENTS];
 static volatile uint8_t *local_buffers[NUM_IMAGE_SEGMENTS];
 static uint32_t keyframe_offset;
 
-vector<uint8_t> byte_vectors[NUM_IMAGE_SEGMENTS];
+static vector<uint8_t> byte_vectors[NUM_IMAGE_SEGMENTS];
 
 static char *output_file;
-FILE *outfile;
+static FILE *outfile;
 
 static uint32_t width;
 static uint32_t height;
 
-int threads_writing[NUM_IMAGE_SEGMENTS] = {0, 0};
-int main_writing = 0;
-int write_in_progress = 0;
+static volatile int threads_writing[NUM_IMAGE_SEGMENTS] = {0, 0};
 
-pthread_mutex_t mut_write = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond_write = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t mut_write = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond_write = PTHREAD_COND_INITIALIZER;
 
-pthread_mutex_t muts[NUM_IMAGE_SEGMENTS] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
-pthread_cond_t conds[NUM_IMAGE_SEGMENTS] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
+static pthread_mutex_t start_muts[NUM_IMAGE_SEGMENTS] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
+static pthread_cond_t start_conds[NUM_IMAGE_SEGMENTS] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
 
-pthread_t children[NUM_IMAGE_SEGMENTS];
+static pthread_t children[NUM_IMAGE_SEGMENTS];
 
-
-
-int threads_done[NUM_IMAGE_SEGMENTS] = {0, 0};
-int fd;
+static volatile int threads_done[NUM_IMAGE_SEGMENTS] = {0, 0};
+static int fd;
 
 /* getopt */
 extern char *optarg;
@@ -133,27 +127,27 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 
 static void *flush(void *arg) {
 	int threadNum = *(int*)arg;
-	pthread_mutex_lock(&muts[threadNum]);
-	int frames = 0;
+	pthread_mutex_lock(&start_muts[threadNum]);
 	while (threads_done[threadNum] == 0) {
-		pthread_cond_wait(&conds[threadNum], &muts[threadNum]);
+		pthread_cond_wait(&start_conds[threadNum], &start_muts[threadNum]);
 		if(threads_done[threadNum]) {
 			break;
 		}
+		threads_writing[threadNum] = 1;
+
 		cms[threadNum]->curframe->keyframe = ((int*) local_buffers[threadNum])[keyframe_offset];
 		write_frame_to_buffer(cms[threadNum], byte_vectors[threadNum], threadNum);
 		signal_encoder(threadNum);
 
-
 		pthread_mutex_lock(&mut_write);
-		while(write_in_progress) {
+
+		while(next_to_write != threadNum) {
 			pthread_cond_wait(&cond_write, &mut_write);
 		}
-		write_in_progress = 1;
-		pthread_mutex_unlock(&mut_write);
+
 		write_buffer_to_file(byte_vectors[threadNum], cms[threadNum]->e_ctx.fp);
-		pthread_mutex_lock(&mut_write);
-		write_in_progress = 0;
+
+		next_to_write = threadNum^1;
 		pthread_cond_signal(&cond_write);
 		pthread_mutex_unlock(&mut_write);
 
@@ -161,15 +155,9 @@ static void *flush(void *arg) {
 
 		threads_writing[threadNum] = 0;
 
-		printf(", written\n");
-		//printf("signal from 0\n");
-		//if(frames++ > 0) {
-		pthread_cond_signal(&conds[threadNum]);
-		//}
-		pthread_mutex_unlock(&muts[threadNum]);
-
+		pthread_cond_signal(&start_conds[threadNum]);
 	}
-	pthread_mutex_unlock(&muts[threadNum]);
+	pthread_mutex_unlock(&start_muts[threadNum]);
 	return NULL;
 }
 
@@ -284,12 +272,12 @@ int main(int argc, char **argv)
   	  fflush(stdout);
 	  fsync(fd);
 
-	  clock_t start = clock();
+	  //clock_t start = clock();
   	  wait_for_encoder(&done, &length, segNum);
 
-  	  clock_t end = clock();
-  	  float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-  	  printf("encoder: %f\n", seconds*1000.0);
+  	  //clock_t end = clock();
+  	  //float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+  	  //printf("encoder: %f\n", seconds*1000.0);
 
   	  if (!done)
   	  {
@@ -302,30 +290,34 @@ int main(int argc, char **argv)
   		  break;
   	  }
 
-	  pthread_mutex_lock(&muts[segNum]);
+	  pthread_mutex_lock(&start_muts[segNum]);
 	  while(threads_writing[segNum]) {
-		  pthread_cond_wait(&conds[segNum], &muts[segNum]);
+		  pthread_cond_wait(&start_conds[segNum], &start_muts[segNum]);
 	  }
-
-	  threads_writing[segNum] = 1;
-	  pthread_cond_signal(&conds[segNum]);
-	  pthread_mutex_unlock(&muts[segNum]);
+	  pthread_cond_signal(&start_conds[segNum]);
+	  pthread_mutex_unlock(&start_muts[segNum]);
 
 	  ++frameNum;
 
 	  segNum ^= 1;
+	  printf(", written\n");
+
   }
 
   for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 	  while(threads_writing[i]);
-	  pthread_mutex_lock(&muts[i]);
+	  pthread_mutex_lock(&start_muts[i]);
 	  threads_done[i] = 1;
-	  pthread_cond_signal(&conds[i]);
-	  pthread_mutex_unlock(&muts[i]);
+	  pthread_cond_signal(&start_conds[i]);
+	  pthread_mutex_unlock(&start_muts[i]);
+	  pthread_join(children[i], NULL);
+	  pthread_mutex_destroy(&start_muts[i]);
+	  pthread_cond_destroy(&start_conds[i]);
   }
 
-  pthread_mutex_destroy(&muts[0]);
-  pthread_mutex_destroy(&muts[1]);
+  pthread_mutex_destroy(&mut_write);
+  pthread_cond_destroy(&cond_write);
+
 
   cleanup_SISCI();
   for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {

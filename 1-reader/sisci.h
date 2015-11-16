@@ -4,7 +4,8 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_common.h"
+#include "sisci_common.h"
+
 
 
 void init_SISCI(unsigned int localAdapterNo, unsigned int encoderNodeId);

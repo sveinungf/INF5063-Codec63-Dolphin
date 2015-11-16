@@ -12,7 +12,7 @@ LOCAL_ADAPTER_NO ?= 0
 CCFLAGS = -Wall -march=native
 NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
 PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
-LDFLAGS = -lm
+LDFLAGS = -lm -lpthread
 
 ifeq ($(DEBUG),1)
 	CCFLAGS += -Og -g -pg
@@ -21,7 +21,7 @@ else
 	CCFLAGS += -O3
 endif
 
-#SISCI
+### SISCI ###
 DIS_SRC = /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
@@ -31,6 +31,12 @@ INCLUDE_PATHS += $(DIS_SRC)/SISCI/src
 CCFLAGS += -D_REENTRANT
 CCFLAGS += $(addprefix -idirafter,$(INCLUDE_PATHS))
 LDFLAGS += -L/opt/DIS/lib64 -lsisci
+#############
+
+DIR_COMMON = ../common
+DIR_TEMP = ../temp
+
+CCFLAGS += -idirafter$(DIR_COMMON)
 
 ALL_NVCCFLAGS = $(NVCCFLAGS)
 ALL_NVCCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
@@ -58,8 +64,8 @@ else ifeq ($(VIDEO),2)
 	REFERENCE_C63 = ~/c63/reference/tractor.c63
 endif
 
-C63_FILE = ../temp/test.c63
-OUTPUT_VIDEO = ../temp/output.yuv
+C63_FILE = $(DIR_TEMP)/test.c63
+OUTPUT_VIDEO = $(DIR_TEMP)/output.yuv
 
 all: c63enc
 
@@ -68,11 +74,21 @@ all: c63enc
 %.o: %.cu
 	$(NVCC) $(ALL_NVCCFLAGS) -c $< -o $@
 
-c63enc: c63enc.o init_cuda.o init.o tables.o zimd_dsp.o common.o me.o sisci.o
+OBJECTS_COMMON = tables.o	
+OBJECTS_ROOT = allocation.o c63enc.o init.o sisci.o
+OBJECTS_CUDA = dsp.o init_cuda.o me.o
+OBJECTS_SIMD = dsp.o me.o
+
+ALL_OBJECTS = $(OBJECTS_ROOT)
+ALL_OBJECTS += $(addprefix $(DIR_COMMON)/,$(OBJECTS_COMMON))
+ALL_OBJECTS += $(addprefix cuda/,$(OBJECTS_CUDA))
+ALL_OBJECTS += $(addprefix simd/,$(OBJECTS_SIMD))   
+
+c63enc: $(ALL_OBJECTS)
 	$(NVCC) $(ALL_NVCCFLAGS) $(ALL_LDFLAGS) -o $@ $^
 
 clean:
-	rm -f *.o c63enc $(OUTPUT_VIDEO)
+	rm -f c63enc $(ALL_OBJECTS) $(OUTPUT_VIDEO)
 
 encode: c63enc
 	./c63enc -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_READER) -w $(NODE_ID_WRITER)

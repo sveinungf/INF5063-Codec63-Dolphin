@@ -1,5 +1,6 @@
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 // Local
 static unsigned int localAdapterNo;
@@ -14,7 +15,7 @@ static int callback_arg[NUM_IMAGE_SEGMENTS];
 
 // Encoder
 static unsigned int encoderNodeId;
-static sci_local_data_interrupt_t interruptFromEncoder;
+static sci_local_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_data_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t remoteImageSegments[NUM_IMAGE_SEGMENTS];
 
@@ -41,12 +42,13 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 		SCICreateDMAQueue(sds[i], &dmaQueues[i], localAdapterNo, maxEntries, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
 	}
-
-	unsigned int interruptFromEncoderNo = READY_FOR_ORIG_TRANSFER;
-	SCICreateDataInterrupt(sds[0], &interruptFromEncoder, localAdapterNo, &interruptFromEncoderNo,
-			SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
-
+	unsigned int interruptFromEncoderNo;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		interruptFromEncoderNo = READY_FOR_ORIG_TRANSFER + i;
+		SCICreateInterrupt(sds[i], &interruptsFromEncoder[i], localAdapterNo, &interruptFromEncoderNo,
+				SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);
+		sisci_assert(error);
+	}
 
 	// Interrupts to the encoder
 	printf("Connecting to interrupts on encoder... ");
@@ -67,19 +69,15 @@ void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	SCIDisconnectDataInterrupt(interruptsToEncoder[0], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-	SCIDisconnectDataInterrupt(interruptsToEncoder[1], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
-	do
-	{
-		SCIRemoveDataInterrupt(interruptFromEncoder, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		SCIDisconnectDataInterrupt(interruptsToEncoder[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
+		do {
+			SCIRemoveInterrupt(interruptsFromEncoder[i], SCI_NO_FLAGS, &error);
+		} while (error != SCI_ERR_OK);
+
 		SCIRemoveDMAQueue(dmaQueues[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 
@@ -157,13 +155,10 @@ void send_width_and_height(uint32_t width, uint32_t height)
 void wait_for_encoder(int segNum)
 {
 	sci_error_t error;
-	int ack;
-	unsigned int length = sizeof(int);
-	do {
-		SCIWaitForDataInterrupt(interruptFromEncoder, &ack, &length, SCI_INFINITE_TIMEOUT,
+
+	SCIWaitForInterrupt(interruptsFromEncoder[segNum], SCI_INFINITE_TIMEOUT,
 				SCI_NO_FLAGS, &error);
-		sisci_assert(error);
-	} while (ack != segNum);
+	sisci_assert(error);
 }
 
 sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {

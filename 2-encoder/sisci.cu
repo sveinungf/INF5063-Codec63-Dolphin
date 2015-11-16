@@ -1,8 +1,9 @@
 #include <sisci_api.h>
 #include <sisci_error.h>
 
-#include "../common/sisci_errchk.h"
 #include "sisci.h"
+#include "sisci_errchk.h"
+
 
 #define MIN_SEG_SZ 237569
 
@@ -16,14 +17,14 @@ uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
 // Reader
 unsigned int readerNodeId;
 sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
-sci_remote_data_interrupt_t interruptToReader;
+sci_remote_interrupt_t interruptsToReader[NUM_IMAGE_SEGMENTS];
 sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_local_segment_t))));
 sci_map_t imageMaps[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_map_t))));
 
 // Writer
 static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
-static sci_local_data_interrupt_t interruptFromWriter;
+static sci_local_interrupt_t interruptsFromWriter[NUM_IMAGE_SEGMENTS];
 static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
 static int callback_arg[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
@@ -103,20 +104,25 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 		sisci_assert(error);
 	}
 
-	unsigned int interruptFromWriterNo = DATA_WRITTEN;
-	SCICreateDataInterrupt(writer_sds[0], &interruptFromWriter, localAdapterNo, &interruptFromWriterNo, NULL,
-					NULL, SCI_FLAG_FIXED_INTNO, &error);
-	sisci_assert(error);
+	unsigned int interruptFromWriterNo;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		interruptFromWriterNo = DATA_WRITTEN + i;
+		SCICreateInterrupt(writer_sds[i], &interruptsFromWriter[i], localAdapterNo, &interruptFromWriterNo, NULL,
+				NULL, SCI_FLAG_FIXED_INTNO, &error);
+		sisci_assert(error);
+	}
 
 	// Interrupts to the reader
 	printf("Connecting to interrupt on reader... ");
 	fflush(stdout);
-	do
-	{
-		SCIConnectDataInterrupt(reader_sds[0], &interruptToReader, readerNodeId, localAdapterNo,
-				READY_FOR_ORIG_TRANSFER, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		do
+		{
+			SCIConnectInterrupt(reader_sds[i], &interruptsToReader[i], readerNodeId, localAdapterNo,
+					READY_FOR_ORIG_TRANSFER + i, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+		}
+		while (error != SCI_ERR_OK);
 	}
-	while (error != SCI_ERR_OK);
 	printf("Done!\n");
 
 	// Interrupts to the writer
@@ -137,17 +143,17 @@ void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	SCIDisconnectDataInterrupt(interruptToReader, SCI_NO_FLAGS, &error);
+	SCIDisconnectInterrupt(interruptsToReader[0], SCI_NO_FLAGS, &error);
 	sisci_check(error);
-
-	do {
-		SCIRemoveDataInterrupt(interruptFromWriter, SCI_NO_FLAGS, &error);
-	} while (error != SCI_ERR_OK);
-
-
+	SCIDisconnectInterrupt(interruptsToReader[1], SCI_NO_FLAGS, &error);
+	sisci_check(error);
 
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		do {
+			SCIRemoveInterrupt(interruptsFromWriter[i], SCI_NO_FLAGS, &error);
+		} while (error != SCI_ERR_OK);
+
 		SCIDisconnectDataInterrupt(interruptsToWriter[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 
@@ -168,10 +174,14 @@ void cleanup_SISCI()
 
 
 void set_sizes_offsets(struct c63_common *cm) {
+	static const int Y = Y_COMPONENT;
+	static const int U = U_COMPONENT;
+	static const int V = V_COMPONENT;
+
     keyframeSize = sizeof(int);
-    mbSizeY = cm->mb_rowsY * cm->mb_colsY * sizeof(struct macroblock);
-    mbSizeU = cm->mb_rowsU * cm->mb_colsU * sizeof(struct macroblock);
-    mbSizeV = cm->mb_rowsV * cm->mb_colsV * sizeof(struct macroblock);
+    mbSizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+    mbSizeU = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
+    mbSizeV = cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
     residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
     residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
     residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
@@ -372,13 +382,9 @@ void wait_for_writer(int segNum)
 {
 	sci_error_t error;
 
-	int ack;
-	unsigned int length = sizeof(int);
-	do {
-		SCIWaitForDataInterrupt(interruptFromWriter, &ack, &length, SCI_INFINITE_TIMEOUT,
-				SCI_NO_FLAGS, &error);
-		sisci_assert(error);
-	} while (ack != segNum);
+	SCIWaitForInterrupt(interruptsFromWriter[segNum], SCI_INFINITE_TIMEOUT,
+			SCI_NO_FLAGS, &error);
+	sisci_assert(error);
 }
 
 
@@ -403,8 +409,13 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 }
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV);
-	memcpy(residuals_Y[segNum], residuals->base, residualsSizeY + residualsSizeU + residualsSizeV);
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
+	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
+	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
+
+	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizeY);
+	memcpy(residuals_U[segNum], residuals->Udct, residualsSizeU);
+	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizeV);
 }
 
 void cuda_copy_to_segment(struct c63_common *cm, int segNum) {
@@ -441,9 +452,7 @@ void signal_reader(int segNum)
 {
 	sci_error_t error;
 
-	int ack = segNum;
-	SCITriggerDataInterrupt(interruptToReader, (void*) &ack, sizeof(int), SCI_NO_FLAGS, &error);
-
+	SCITriggerInterrupt(interruptsToReader[segNum], SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }
 

@@ -22,7 +22,6 @@ extern "C" {
 
 using namespace std;
 
-
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -45,62 +44,64 @@ int fd;
 /* getopt */
 extern char *optarg;
 
-
 struct c63_common* init_c63_enc()
 {
-  /* calloc() sets allocated memory to zero */
-  struct c63_common *cm = (struct c63_common *) calloc(1, sizeof(struct c63_common));
+	/* calloc() sets allocated memory to zero */
+	struct c63_common *cm = (struct c63_common *) calloc(1, sizeof(struct c63_common));
 
-  cm->width = width;
-  cm->height = height;
+	cm->width = width;
+	cm->height = height;
 
-  cm->padw[Y_COMPONENT] = cm->ypw = (uint32_t)(ceil(width/16.0f)*16);
-  cm->padh[Y_COMPONENT] = cm->yph = (uint32_t)(ceil(height/16.0f)*16);
-  cm->padw[U_COMPONENT] = cm->upw = (uint32_t)(ceil(width*UX/(YX*8.0f))*8);
-  cm->padh[U_COMPONENT] = cm->uph = (uint32_t)(ceil(height*UY/(YY*8.0f))*8);
-  cm->padw[V_COMPONENT] = cm->vpw = (uint32_t)(ceil(width*VX/(YX*8.0f))*8);
-  cm->padh[V_COMPONENT] = cm->vph = (uint32_t)(ceil(height*VY/(YY*8.0f))*8);
+	cm->padw[Y_COMPONENT] = cm->ypw = (uint32_t) (ceil(width / 16.0f) * 16);
+	cm->padh[Y_COMPONENT] = cm->yph = (uint32_t) (ceil(height / 16.0f) * 16);
+	cm->padw[U_COMPONENT] = cm->upw = (uint32_t) (ceil(width * UX / (YX * 8.0f)) * 8);
+	cm->padh[U_COMPONENT] = cm->uph = (uint32_t) (ceil(height * UY / (YY * 8.0f)) * 8);
+	cm->padw[V_COMPONENT] = cm->vpw = (uint32_t) (ceil(width * VX / (YX * 8.0f)) * 8);
+	cm->padh[V_COMPONENT] = cm->vph = (uint32_t) (ceil(height * VY / (YY * 8.0f)) * 8);
 
-  cm->mb_cols[Y] = cm->ypw / 8;
-  cm->mb_cols[U] = cm->mb_cols[Y] / 2;
-  cm->mb_cols[V] = cm->mb_cols[U];
+	cm->mb_cols[Y] = cm->ypw / 8;
+	cm->mb_cols[U] = cm->mb_cols[Y] / 2;
+	cm->mb_cols[V] = cm->mb_cols[U];
 
-  cm->mb_rows[Y] = cm->yph / 8;
-  cm->mb_rows[U] = cm->mb_rows[Y] / 2;
-  cm->mb_rows[V] = cm->mb_rows[U];
+	cm->mb_rows[Y] = cm->yph / 8;
+	cm->mb_rows[U] = cm->mb_rows[Y] / 2;
+	cm->mb_rows[V] = cm->mb_rows[U];
 
-  /* Quality parameters -- Home exam deliveries should have original values,
-   i.e., quantization factor should be 25, search range should be 16, and the
-   keyframe interval should be 100. */
-  cm->qp = 25;                  // Constant quantization factor. Range: [1..50]
-  cm->keyframe_interval = 100;  // Distance between keyframes
+	/* Quality parameters -- Home exam deliveries should have original values,
+	 i.e., quantization factor should be 25, search range should be 16, and the
+	 keyframe interval should be 100. */
+	cm->qp = 25;                  // Constant quantization factor. Range: [1..50]
+	cm->keyframe_interval = 100;  // Distance between keyframes
 
-  /* Initialize quantization tables */
-  int i;
-  for (i = 0; i < 64; ++i)
-  {
-    cm->quanttbl[Y_COMPONENT][i] = yquanttbl_def[i] / (cm->qp / 10.0);
-    cm->quanttbl[U_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
-    cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
-  }
+	/* Initialize quantization tables */
+	int i;
+	for (i = 0; i < 64; ++i)
+	{
+		cm->quanttbl[Y_COMPONENT][i] = yquanttbl_def[i] / (cm->qp / 10.0);
+		cm->quanttbl[U_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
+		cm->quanttbl[V_COMPONENT][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
+	}
 
-  cm->curframe = (struct frame*) malloc(sizeof(struct frame));
-  cm->curframe->residuals = (dct_t*) malloc(sizeof(dct_t));
-  return cm;
+	cm->curframe = (struct frame*) malloc(sizeof(struct frame));
+	cm->curframe->residuals = (dct_t*) malloc(sizeof(dct_t));
+	return cm;
 }
 
-static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
+static void set_offsets_and_pointers(struct c63_common *cm, int segNum)
+{
 	// Set offsets within segment
 	keyframe_offset = 0;
 
 	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows[Y]*cm->mb_cols[Y]*sizeof(struct macroblock);
-	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows[U]*cm->mb_cols[U]*sizeof(struct macroblock);
+	uint32_t mb_offset_U = mb_offset_Y
+			+ cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U
+			+ cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
 
-	uint32_t residuals_offset_Y = mb_offset_V +  cm->mb_rows[V]*cm->mb_cols[V]*sizeof(struct macroblock);
-	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw*cm->yph*sizeof(int16_t);
-	uint32_t residuals_offset_V = residuals_offset_U + cm->upw*cm->uph*sizeof(int16_t);
-
+	uint32_t residuals_offset_Y = mb_offset_V
+			+ cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
+	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw * cm->yph * sizeof(int16_t);
+	uint32_t residuals_offset_V = residuals_offset_U + cm->upw * cm->uph * sizeof(int16_t);
 
 	// Set pointers to macroblocks
 	cm->curframe->mbs[Y_COMPONENT] = (struct macroblock*) (local_buffers[segNum] + mb_offset_Y);
@@ -113,16 +114,17 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
-static void *flush(void *arg) {
+static void *flush(void *arg)
+{
 	pthread_mutex_lock(&mut);
-	while (thread_done == 0) {
+	while (thread_done == 0)
+	{
 		pthread_cond_wait(&cond, &mut);
 		fsync(fd);
 	}
 	pthread_mutex_unlock(&mut);
 	return NULL;
 }
-
 
 static void print_help()
 {
@@ -133,7 +135,7 @@ static void print_help()
 	printf("  -o                             Output file (.c63)\n");
 	printf("\n");
 
-  exit(EXIT_FAILURE);
+	exit(EXIT_FAILURE);
 }
 
 void interrupt_handler(int signal)
@@ -144,136 +146,133 @@ void interrupt_handler(int signal)
 
 int main(int argc, char **argv)
 {
-  struct sigaction int_handler;
-  int_handler.sa_handler = interrupt_handler;
-  sigemptyset(&int_handler.sa_mask);
-  int_handler.sa_flags = 0;
+	struct sigaction int_handler;
+	int_handler.sa_handler = interrupt_handler;
+	sigemptyset(&int_handler.sa_mask);
+	int_handler.sa_flags = 0;
 
-  sigaction(SIGINT, &int_handler, NULL);
+	sigaction(SIGINT, &int_handler, NULL);
 
-  int c;
+	int c;
 
-  if (argc == 1) { print_help(); }
+	if (argc == 1)
+	{
+		print_help();
+	}
 
-  unsigned int localAdapterNo = 0;
-  unsigned int encoderNodeId = 0;
+	unsigned int localAdapterNo = 0;
+	unsigned int encoderNodeId = 0;
 
-  while ((c = getopt(argc, argv, "a:r:o:")) != -1)
-  {
-	  switch (c)
-	  {
-	  	  case 'a':
-	  		  localAdapterNo = atoi(optarg);
-	  		  break;
-	  	  case 'r':
-	  		  encoderNodeId = atoi(optarg);
-	  		  break;
-	  	  case 'o':
-	  		  output_file = optarg;
-	  		  break;
-	  	  default:
-	  		  print_help();
-	  		  break;
-	  }
-  }
+	while ((c = getopt(argc, argv, "a:r:o:")) != -1)
+	{
+		switch (c)
+		{
+			case 'a':
+				localAdapterNo = atoi(optarg);
+				break;
+			case 'r':
+				encoderNodeId = atoi(optarg);
+				break;
+			case 'o':
+				output_file = optarg;
+				break;
+			default:
+				print_help();
+				break;
+		}
+	}
 
-  /*
-  if (optind >= argc)
-  {
-    fprintf(stderr, "Error getting program options, try --help.\n");
-    exit(EXIT_FAILURE);
-  }
-  */
+	outfile = fopen(output_file, "wb");
 
-  outfile = fopen(output_file, "wb");
+	if (outfile == NULL)
+	{
+		perror("fopen");
+		exit(EXIT_FAILURE);
+	}
 
-  if (outfile == NULL)
-  {
-    perror("fopen");
-    exit(EXIT_FAILURE);
-  }
+	init_SISCI(localAdapterNo, encoderNodeId);
 
-  init_SISCI(localAdapterNo, encoderNodeId);
+	receive_width_and_height(&width, &height);
 
-  receive_width_and_height(&width, &height);
+	cms[0] = init_c63_enc();
+	cms[1] = init_c63_enc();
 
-  cms[0] = init_c63_enc();
-  cms[1] = init_c63_enc();
+	uint32_t localSegmentSize = sizeof(int);
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
+	{
+		localSegmentSize += cms[0]->mb_cols[c] * cms[0]->mb_rows[c] * sizeof(struct macroblock);
+		localSegmentSize += cms[0]->padw[c] * cms[0]->padh[c] * sizeof(int16_t);
+	}
 
-  uint32_t localSegmentSize = sizeof(int);
-  for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-	  localSegmentSize += cms[0]->mb_cols[c] * cms[0]->mb_rows[c] * sizeof(struct macroblock);
-	  localSegmentSize += cms[0]->padw[c] * cms[0]->padh[c] * sizeof(int16_t);
-  }
+	local_buffers[0] = init_local_segment(localSegmentSize, 0);
+	local_buffers[1] = init_local_segment(localSegmentSize, 1);
 
-  local_buffers[0] = init_local_segment(localSegmentSize, 0);
-  local_buffers[1] = init_local_segment(localSegmentSize, 1);
+	set_offsets_and_pointers(cms[0], 0);
+	set_offsets_and_pointers(cms[1], 1);
 
-  set_offsets_and_pointers(cms[0], 0);
-  set_offsets_and_pointers(cms[1], 1);
+	/* Encode input frames */
+	int numframes = 0;
 
-  /* Encode input frames */
-  int numframes = 0;
+	uint8_t done = 0;
+	unsigned int length = sizeof(uint8_t);
 
-  uint8_t done = 0;
-  unsigned int length = sizeof(uint8_t);
+	fd = fileno(outfile);
+	pthread_t child;
+	pthread_create(&child, NULL, flush, NULL);
 
-  fd = fileno(outfile);
-  pthread_t child;
-  pthread_create(&child, NULL, flush, NULL);
+	int segNum = 0;
 
-  int segNum = 0;
+	while (1)
+	{
+		printf("Frame %d:", numframes);
+		fflush(stdout);
 
-  while (1)
-  {
-	  printf("Frame %d:", numframes);
-	  fflush(stdout);
+		wait_for_encoder(&done, &length, segNum);
 
-	  wait_for_encoder(&done, &length, segNum);
+		if (!done)
+		{
+			printf(" Received");
+			fflush(stdout);
+		}
+		else
+		{
+			printf("\rNo more frames from encoder\n");
+			break;
+		}
 
-	  if (!done)
-	  {
-		  printf(" Received");
-		  fflush(stdout);
-	  }
-	  else
-	  {
-		  printf("\rNo more frames from encoder\n");
-		  break;
-	  }
+		cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
 
-	  cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
+		vector<uint8_t> byte_vector = write_frame_to_buffer(cms[segNum]);
+		write_buffer_to_file(byte_vector, outfile);
 
-	  vector<uint8_t> byte_vector = write_frame_to_buffer(cms[segNum]);
-	  write_buffer_to_file(byte_vector, outfile);
+		// Signal encoder that writer is ready for a new frame
+		signal_encoder(segNum);
 
-	  // Signal encoder that writer is ready for a new frame
-	  signal_encoder(segNum);
+		// Flush
+		pthread_cond_signal(&cond);
 
-	  // Flush
-	  pthread_cond_signal(&cond);
+		printf(", written\n");
+		++numframes;
 
-	  printf(", written\n");
-	  ++numframes;
+		segNum ^= 1;
+	}
 
-	  segNum ^= 1;
-  }
+	pthread_mutex_lock(&mut);
+	thread_done = 1;
+	pthread_cond_signal(&cond);
+	pthread_mutex_unlock(&mut);
 
-  pthread_mutex_lock(&mut);
-  thread_done = 1;
-  pthread_cond_signal(&cond);
-  pthread_mutex_unlock(&mut);
+	cleanup_SISCI();
 
-  cleanup_SISCI();
+	int i;
+	for (i = 0; i < 2; ++i)
+	{
+		free(cms[i]->curframe->residuals);
+		free(cms[i]->curframe);
+		free(cms[i]);
+	}
 
-  int i;
-  for (i = 0; i < 2; ++i) {
-	  free(cms[i]->curframe->residuals);
-	  free(cms[i]->curframe);
-	  free(cms[i]);
-  }
+	fclose(outfile);
 
-  fclose(outfile);
-
-  return EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }

@@ -125,7 +125,7 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
-static void *flush(void *arg) {
+static void *segment_handler(void *arg) {
 	int threadNum = *(int*)arg;
 	pthread_mutex_lock(&start_muts[threadNum]);
 	while (threads_done[threadNum] == 0) {
@@ -259,8 +259,8 @@ int main(int argc, char **argv)
   fd = fileno(outfile);
   int arg1 = 0;
   int arg2 = 1;
-  pthread_create(&children[0], NULL, flush, (void*)&arg1);
-  pthread_create(&children[1], NULL, flush, (void*)&arg2);
+  pthread_create(&children[0], NULL, segment_handler, (void*)&arg1);
+  pthread_create(&children[1], NULL, segment_handler, (void*)&arg2);
 
   /* Encode input frames */
   int32_t frameNum = 0;
@@ -272,12 +272,12 @@ int main(int argc, char **argv)
   	  fflush(stdout);
 	  fsync(fd);
 
-	  //clock_t start = clock();
+	  clock_t start = clock();
   	  wait_for_encoder(&done, &length, segNum);
 
-  	  //clock_t end = clock();
-  	  //float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-  	  //printf("encoder: %f\n", seconds*1000.0);
+  	  clock_t end = clock();
+  	  float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+  	  printf("encoder: %f\n", seconds*1000.0);
 
   	  if (!done)
   	  {

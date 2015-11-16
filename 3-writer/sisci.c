@@ -161,19 +161,18 @@ void signal_encoder(int32_t frameNum)
 
 void cleanup_SISCI() {
 	sci_error_t error;
-
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		SCIUnmapSegment(localMaps[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 
-		SCIRemoveSegment(localSegments[i], SCI_NO_FLAGS, &error);
+		//SCIRemoveSegment(localSegments[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
+		printf("aspok\n");
 
 		SCIClose(sds[i], SCI_NO_FLAGS, &error);
 		sisci_check(error);
 	}
-
 	SCISetSegmentUnavailable(encoder_syn.segment, localAdapterNo, SCI_NO_FLAGS, &error);
 	sisci_check(error);
 	SCIUnmapSegment(encoder_syn.map, SCI_NO_FLAGS, &error);

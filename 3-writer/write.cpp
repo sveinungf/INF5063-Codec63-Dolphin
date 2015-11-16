@@ -8,8 +8,8 @@
 #include <string.h>
 
 #include "c63.h"
-#include "c63_write.h"
 #include "tables.h"
+#include "write.h"
 
 using namespace std;
 

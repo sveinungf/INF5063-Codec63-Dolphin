@@ -13,7 +13,7 @@
 #include <unistd.h>
 
 #include "c63.h"
-#include "c63_write.h"
+#include "write.h"
 
 extern "C" {
 #include "sisci.h"

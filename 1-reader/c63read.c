@@ -141,8 +141,6 @@ int main(int argc, char **argv) {
 
 	init_SISCI(localAdapterNo, encoderNodeId);
 
-	init_msg_segments();
-
 	send_width_and_height(width, height);
 
 	init_segment_sizes();
@@ -167,15 +165,15 @@ int main(int argc, char **argv) {
 	}
 
 	/* Encode input frames */
-	int32_t frameNum = 0;
+	int numframes = 0;
 
 	int segNum = 0;
 
 	while (1) {
 
-		if (frameNum >= NUM_IMAGE_SEGMENTS) {
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The encoder sends an interrupt when it is ready to receive the next frame
-			wait_for_encoder(frameNum, NUM_IMAGE_SEGMENTS);
+			wait_for_encoder(segNum);
 		}
 
 		int rc = read_yuv(infile, images[segNum]);
@@ -186,25 +184,25 @@ int main(int argc, char **argv) {
 		}
 
 		// Copy new frame to remote segment
-		printf("Sending frame %d to encoder... ", frameNum);
+		printf("Sending frame %d to encoder... ", numframes);
 		fflush(stdout);
 
 		// Start DMA transfer with interrupt to encoder handled by callback
-		transfer_image_async(segNum, frameNum);
+		transfer_image_async(segNum);
 
-		++frameNum;
+		++numframes;
 
 		segNum ^= 1;
 
-		if (limit_numframes && frameNum >= limit_numframes) {
+		if (limit_numframes && numframes >= limit_numframes) {
 			// No more data
 			break;
 		}
 	}
 
 	// Signal computation node that there are no more frames to be encoded
-	wait_for_encoder(frameNum, 1);
-	signal_encoder(NO_MORE_FRAMES, frameNum-1);
+	wait_for_encoder(segNum^1);
+	signal_encoder(NO_MORE_FRAMES, segNum);
 
 	fclose(infile);
 

@@ -44,7 +44,7 @@ all: c63write
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 	
 OBJECTS_COMMON = tables.o
-OBJECTS_ROOT = c63write.o c63_write.o sisci.o
+OBJECTS_ROOT = c63write.o sisci.o write.o
 
 ALL_OBJECTS = $(OBJECTS_ROOT)
 ALL_OBJECTS += $(addprefix $(DIR_COMMON)/,$(OBJECTS_COMMON)) 

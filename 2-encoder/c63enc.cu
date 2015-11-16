@@ -232,9 +232,10 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	init_SISCI(localAdapterNo, readerNodeId, writerNodeId);
+	/* Encode input frames */
+	int numframes = 0;
 
-	init_msg_segments();
+	init_SISCI(localAdapterNo, readerNodeId, writerNodeId);
 
 	uint32_t width, height;
 	receive_width_and_height(&width, &height);
@@ -246,13 +247,15 @@ int main(int argc, char **argv)
 
 	set_sizes_offsets(cm);
 
-	struct segment_yuv images_gpu[NUM_IMAGE_SEGMENTS];
-	int i;
-	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		images_gpu[i] = init_image_segment(cm, i);
-		init_remote_encoded_data_segment(i);
-	}
+	struct segment_yuv images_gpu[2];
+	images_gpu[0] = init_image_segment(cm, 0);
+	images_gpu[1] = init_image_segment(cm, 1);
+	init_remote_encoded_data_segment(0);
+	init_remote_encoded_data_segment(1);
 	init_local_encoded_data_segments();
+
+	//yuv_t* image_gpu = create_image_gpu(cm);
+	int segNum = 0;
 
 	pthread_t simd_threads[COLOR_COMPONENTS];
 
@@ -281,21 +284,13 @@ int main(int argc, char **argv)
 		}
 	}
 
-	/* Encode input frames */
-	int segNum = 0;
-	int32_t frameNum = 0;
-
+	int transferred = 0;
 	while (1)
 	{
-		//clock_t start = clock();
 		// The reader sends an interrupt when it has transferred the next frame
-		int done = wait_for_reader(frameNum);
-		/*
-		clock_t end = clock();
-		float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-		printf("reader: %f\n", seconds*1000.0);
-		 */
-		printf("Frame %d:", frameNum);
+		int done = wait_for_reader(segNum);
+
+		printf("Frame %d:", numframes);
 		fflush(stdout);
 
 		if (!done)
@@ -307,7 +302,7 @@ int main(int argc, char **argv)
 		{
 			printf("\rNo more frames from reader\n");
 
-			wait_for_writer(frameNum, 1);
+			wait_for_writer(segNum^1);
 
 			// Send interrupt to writer signaling that encoding has been finished
 			signal_writer(ENCODING_FINISHED, segNum);
@@ -338,37 +333,32 @@ int main(int argc, char **argv)
 #endif
 
 		// Reader can transfer next frame
-		signal_reader(frameNum);
+		signal_reader(segNum);
 
 		printf(", encoded\n");
 		fflush(stdout);
 
 		wait_for_image_transfer(segNum);
 
-		copy_to_segment(cm->curframe->keyframe, cm->curframe->mbs, cm->curframe->residuals, segNum);
+		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
 		//cuda_copy_to_segment(cm, segNum);
 
-		if (frameNum >= NUM_IMAGE_SEGMENTS) {
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The writer sends an interrupt when it is ready for the next frame
-			clock_t start = clock();
-			wait_for_writer(frameNum, NUM_IMAGE_SEGMENTS);
-
-			clock_t end = clock();
-			float seconds = (float)(end - start) / CLOCKS_PER_SEC;
-			printf("writer: %f\n", seconds*1000.0);
-
-
+			wait_for_writer(segNum);
 			//copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
+			--transferred;
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
 
-		transfer_encoded_data(segNum, frameNum);
+		transfer_encoded_data(cm->curframe->keyframe, segNum);
+		++transferred;
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;
 
-		++frameNum;
+		++numframes;
 
 		segNum ^= 1;
 	}

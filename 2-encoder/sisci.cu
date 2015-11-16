@@ -409,6 +409,8 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 }
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
+	wait_for_image_transfer(segNum);
+
 	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
 	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
 	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);

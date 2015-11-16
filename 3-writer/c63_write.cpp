@@ -235,15 +235,7 @@ static inline uint8_t bit_width(int16_t i)
 		return 0;
 	}
 
-	int r = 0;
-	int v = abs(i);
-
-	while (v >>= 1)
-	{
-		++r;
-	}
-
-	return r + 1;
+	return 32 - __builtin_clz(abs(i));
 }
 
 static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int16_t *in_data,

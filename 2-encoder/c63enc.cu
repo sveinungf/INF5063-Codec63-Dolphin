@@ -100,7 +100,7 @@ static inline void c63_encode_image_host()
 }
 
 template<int component>
-static void* thread_c63_encode_image_host(void* arg)
+static void* thread_c63_encode_image_host(void*)
 {
 	pthread_mutex_lock(&mutex_parent[component]);
 	while (!thread_done) {
@@ -181,7 +181,7 @@ static void print_help()
 	exit(EXIT_FAILURE);
 }
 
-void interrupt_handler(int signal)
+void interrupt_handler(int)
 {
 	SCITerminate();
 	exit(EXIT_FAILURE);

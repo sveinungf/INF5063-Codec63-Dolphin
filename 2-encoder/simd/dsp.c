@@ -8,7 +8,6 @@
 #include "dsp.h"
 #include "tables.h"
 
-
 static void transpose_block(float *in_data, float *out_data)
 {
 	int i;
@@ -209,11 +208,10 @@ static void quantize_block(float *in_data, float *out_data, uint8_t *quant_tbl)
 	for (zigzag = 0; zigzag < 64; zigzag += 8)
 	{
 		// Set the dct_values for the current interation
-		dct_values = _mm256_set_ps(in_data[UV_indexes[zigzag + 7]],
-				in_data[UV_indexes[zigzag + 6]], in_data[UV_indexes[zigzag + 5]],
-				in_data[UV_indexes[zigzag + 4]], in_data[UV_indexes[zigzag + 3]],
-				in_data[UV_indexes[zigzag + 2]], in_data[UV_indexes[zigzag + 1]],
-				in_data[UV_indexes[zigzag]]);
+		dct_values = _mm256_set_ps(in_data[UV_indexes[zigzag + 7]], in_data[UV_indexes[zigzag + 6]],
+				in_data[UV_indexes[zigzag + 5]], in_data[UV_indexes[zigzag + 4]],
+				in_data[UV_indexes[zigzag + 3]], in_data[UV_indexes[zigzag + 2]],
+				in_data[UV_indexes[zigzag + 1]], in_data[UV_indexes[zigzag]]);
 
 		// Multiply with 0.25 to divide by 4.0
 		result = _mm256_mul_ps(dct_values, factor);
@@ -353,8 +351,8 @@ static void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t 
 	}
 }
 
-static void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, int h, int y,
-		uint8_t *out_data, uint8_t *quantization)
+static void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, uint8_t *out_data,
+		uint8_t *quantization)
 {
 	int x;
 
@@ -390,7 +388,7 @@ static void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, in
 	}
 }
 
-static void dct_quantize_row(uint8_t *in_data, uint8_t *prediction, int w, int h, int16_t *out_data,
+static void dct_quantize_row(uint8_t *in_data, uint8_t *prediction, int w, int16_t *out_data,
 		uint8_t *quantization)
 {
 	int x;
@@ -420,11 +418,10 @@ static void dct_quantize_row(uint8_t *in_data, uint8_t *prediction, int w, int h
 void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		uint8_t *out_data, uint8_t *quantization)
 {
-	int y;
-
+	unsigned int y;
 	for (y = 0; y < height; y += 8)
 	{
-		dequantize_idct_row(in_data + y * width, prediction + y * width, width, height, y,
+		dequantize_idct_row(in_data + y * width, prediction + y * width, width,
 				out_data + y * width, quantization);
 	}
 }
@@ -432,11 +429,10 @@ void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint
 void dct_quantize(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
 		int16_t *out_data, uint8_t *quantization)
 {
-	int y;
-
+	unsigned int y;
 	for (y = 0; y < height; y += 8)
 	{
-		dct_quantize_row(in_data + y * width, prediction + y * width, width, height,
-				out_data + y * width, quantization);
+		dct_quantize_row(in_data + y * width, prediction + y * width, width, out_data + y * width,
+				quantization);
 	}
 }

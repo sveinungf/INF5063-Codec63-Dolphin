@@ -388,7 +388,7 @@ void wait_for_writer(int segNum)
 }
 
 
-sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
+sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t status) {
 	sci_callback_action_t retVal;
 
 	if (status == SCI_ERR_OK) {

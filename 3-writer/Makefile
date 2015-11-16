@@ -34,7 +34,7 @@ CCFLAGS += -idirafter$(DIR_COMMON)
 
 CXXFLAGS += $(CCFLAGS)
 
-C63_FILE = ../temp/test.c63
+C63_FILE = $(DIR_TEMP)/test.c63
 
 all: c63write
 
@@ -60,3 +60,6 @@ write: c63write
 
 gprof:
 	gprof c63write gmon.out -b
+
+cachegrind:
+	valgrind --tool=cachegrind --branch-sim=yes --cachegrind-out-file=$(DIR_TEMP)/cachegrind.out ./c63write -a $(LOCAL_ADAPTER_NO) -r $(NODE_ID_ENCODER) -o $(C63_FILE)

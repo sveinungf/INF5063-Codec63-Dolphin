@@ -87,7 +87,7 @@ static inline void flush_bits(vector<uint8_t>& byte_vector)
 }
 
 /* Start of Image (SOI) marker, contains no payload. */
-static void write_SOI(struct c63_common *cm, vector<uint8_t>& byte_vector)
+static void write_SOI(vector<uint8_t>& byte_vector)
 {
 	put_byte(byte_vector, JPEG_DEF_MARKER);
 	put_byte(byte_vector, JPEG_SOI_MARKER);
@@ -157,7 +157,7 @@ static void write_SOF0(struct c63_common *cm, vector<uint8_t>& byte_vector)
 	put_byte(byte_vector, cm->curframe->keyframe);
 }
 
-static void write_DHT_HTS(struct c63_common *cm, vector<uint8_t>& byte_vector, uint8_t id,
+static void write_DHT_HTS(vector<uint8_t>& byte_vector, uint8_t id,
 		uint8_t *numlength, uint8_t* data)
 {
 	/* Find out how many codes we are to write */
@@ -175,7 +175,7 @@ static void write_DHT_HTS(struct c63_common *cm, vector<uint8_t>& byte_vector, u
 
 /* Define Huffman Table (DHT) marker, the payload is the Huffman table
  specifiation. */
-static void write_DHT(struct c63_common *cm, vector<uint8_t>& byte_vector)
+static void write_DHT(vector<uint8_t>& byte_vector)
 {
 	int16_t size = 0x01A2; /* 2 + n*(17+mi); */
 
@@ -188,18 +188,18 @@ static void write_DHT(struct c63_common *cm, vector<uint8_t>& byte_vector)
 
 	/* Write the four huffman table specifications */
 	/* DC table 0 */
-	write_DHT_HTS(cm, byte_vector, 0x00, DCVLC_num_by_length[0], DCVLC_data[0]);
+	write_DHT_HTS(byte_vector, 0x00, DCVLC_num_by_length[0], DCVLC_data[0]);
 	/* DC table 1 */
-	write_DHT_HTS(cm, byte_vector, 0x01, DCVLC_num_by_length[1], DCVLC_data[1]);
+	write_DHT_HTS(byte_vector, 0x01, DCVLC_num_by_length[1], DCVLC_data[1]);
 	/* AC table 0 */
-	write_DHT_HTS(cm, byte_vector, 0x10, ACVLC_num_by_length[0], ACVLC_data[0]);
+	write_DHT_HTS(byte_vector, 0x10, ACVLC_num_by_length[0], ACVLC_data[0]);
 	/* AC table 1 */
-	write_DHT_HTS(cm, byte_vector, 0x11, ACVLC_num_by_length[1], ACVLC_data[1]);
+	write_DHT_HTS(byte_vector, 0x11, ACVLC_num_by_length[1], ACVLC_data[1]);
 }
 
 /* Start of Scan (SOS) marker, the payload is references to the huffman
  tables. It is followed by the image data, see write_frame(). */
-static void write_SOS(struct c63_common *cm, vector<uint8_t>& byte_vector)
+static void write_SOS(vector<uint8_t>& byte_vector)
 {
 	int16_t size = 6 + 2 * COLOR_COMPONENTS;
 
@@ -225,7 +225,7 @@ static void write_SOS(struct c63_common *cm, vector<uint8_t>& byte_vector)
 }
 
 /* End of Image (EOI) marker, contains no payload. */
-static void write_EOI(struct c63_common *cm, vector<uint8_t>& byte_vector)
+static void write_EOI(vector<uint8_t>& byte_vector)
 {
 	put_byte(byte_vector, JPEG_DEF_MARKER);
 	put_byte(byte_vector, JPEG_EOI_MARKER);
@@ -242,7 +242,7 @@ static inline uint8_t bit_width(int16_t i)
 }
 
 static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int16_t *in_data,
-		uint32_t width, uint32_t height, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC,
+		uint32_t width, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC,
 		int32_t cc, int channel)
 {
 	uint32_t i, j;
@@ -388,7 +388,7 @@ static void write_interleaved_data_MCU(struct c63_common *cm, vector<uint8_t>& b
 			ii = wi - 8;
 			ii = MIN(i, ii);
 
-			write_block(cm, byte_vector, dct, wi, he, ii, jj, prev_DC, cc, channel);
+			write_block(cm, byte_vector, dct, wi, ii, jj, prev_DC, cc, channel);
 		}
 	}
 }
@@ -431,20 +431,20 @@ vector<uint8_t> write_frame_to_buffer(struct c63_common *cm)
 	/* Write headers */
 
 	/* Start Of Image */
-	write_SOI(cm, byte_vector);
+	write_SOI(byte_vector);
 	/* Define Quantization Table(s) */
 	write_DQT(cm, byte_vector);
 	/* Start Of Frame 0(Baseline DCT) */
 	write_SOF0(cm, byte_vector);
 	/* Define Huffman Tables(s) */
-	write_DHT(cm, byte_vector);
+	write_DHT(byte_vector);
 	/* Start of Scan */
-	write_SOS(cm, byte_vector);
+	write_SOS(byte_vector);
 
 	write_interleaved_data(cm, byte_vector);
 
 	/* End Of Image */
-	write_EOI(cm, byte_vector);
+	write_EOI(byte_vector);
 
 	return byte_vector;
 }

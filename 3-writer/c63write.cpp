@@ -114,7 +114,7 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum)
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
-static void *flush(void *arg)
+static void *flush(void*)
 {
 	pthread_mutex_lock(&mut);
 	while (thread_done == 0)
@@ -138,7 +138,7 @@ static void print_help()
 	exit(EXIT_FAILURE);
 }
 
-void interrupt_handler(int signal)
+void interrupt_handler(int)
 {
 	SCITerminate();
 	exit(EXIT_FAILURE);

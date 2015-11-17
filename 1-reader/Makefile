@@ -8,7 +8,7 @@ FRAMES ?= 0
 NODE_ID_ENCODER ?= 28
 LOCAL_ADAPTER_NO ?= 0
 
-CCFLAGS = -Wall -malign-double
+CCFLAGS = -Wall
 LDFLAGS = -lm
 
 ifeq ($(DEBUG),1)

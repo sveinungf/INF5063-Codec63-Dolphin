@@ -49,19 +49,16 @@ ifeq ($(VIDEO),0)
 	HEIGHT = 288
 	INPUT_VIDEO = /opt/cipr/foreman.yuv
 	REFERENCE_VIDEO = ~/yuv/reference/foreman.yuv
-	REFERENCE_C63 = ~/c63/reference/foreman.c63
 else ifeq ($(VIDEO),1)
 	WIDTH = 3840
 	HEIGHT = 2160
 	INPUT_VIDEO = /opt/cipr/foreman_4k.yuv
 	REFERENCE_VIDEO = ~/yuv/reference/foreman_4k.yuv
-	REFERENCE_C63 = ~/c63/reference/foreman_4k.yuv
 else ifeq ($(VIDEO),2)
 	WIDTH = 1920
 	HEIGHT = 1080
 	INPUT_VIDEO = /opt/cipr/tractor.yuv
 	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
-	REFERENCE_C63 = ~/c63/reference/tractor.c63
 endif
 
 C63_FILE = $(DIR_TEMP)/test.c63
@@ -111,7 +108,4 @@ psnr-reference:
 	$(PSNR_EXEC) -s $(WIDTH) $(HEIGHT) -v $(INPUT_VIDEO) $(REFERENCE_VIDEO)
 psnr-diff:
 	$(PSNR_EXEC) -s $(WIDTH) $(HEIGHT) -v $(REFERENCE_VIDEO) $(OUTPUT_VIDEO)
-
-cmp:
-	@cmp --silent -n "$$(wc -c < $(C63_FILE))" $(C63_FILE) $(REFERENCE_C63) && echo "test == reference :D" || echo "test != reference :("
-		
+	

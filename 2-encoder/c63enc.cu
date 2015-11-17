@@ -68,7 +68,7 @@ static inline void c63_encode_image_host()
 	const int w = cm->padw[component];
 	const int h = cm->padh[component];
 	const size_t size = w * h * sizeof(uint8_t);
-	const cudaStream_t stream = c63_cuda.stream[component];
+	const cudaStream_t stream = c63_cuda.memcpy_stream[component];
 
 	// Using async memcpy so we don't have to wait for the other streams to finish
 	cudaMemcpyAsync(orig, (void*) orig_gpu, size, cudaMemcpyDeviceToHost, stream);

@@ -36,6 +36,8 @@
 #define U_ON_GPU 0
 #define V_ON_GPU 0
 
+#define ON_GPU(c) (c == Y_COMPONENT ? Y_ON_GPU : (c == U_COMPONENT ? U_ON_GPU : V_ON_GPU))
+
 /* The JPEG file format defines several parts and each part is defined by a
  marker. A file always starts with 0xFF and is then followed by a magic number,
  e.g., like 0xD8 in the SOI marker below. Some markers have a payload, and if

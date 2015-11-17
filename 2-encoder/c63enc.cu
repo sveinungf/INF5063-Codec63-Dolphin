@@ -25,8 +25,6 @@ extern "C" {
 }
 
 
-static const int on_gpu[COLOR_COMPONENTS] = { Y_ON_GPU, U_ON_GPU, V_ON_GPU };
-
 static const int Y = Y_COMPONENT;
 static const int U = U_COMPONENT;
 static const int V = V_COMPONENT;
@@ -157,7 +155,7 @@ static void c63_encode_image(const struct c63_common_gpu& cm_gpu, struct segment
 	}
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			pthread_mutex_lock(&mutex_parent[c]);
 			pthread_cond_signal(&cond_frame_received[c]);
 			pthread_mutex_unlock(&mutex_parent[c]);
@@ -261,7 +259,7 @@ int main(int argc, char **argv)
 	pthread_t simd_threads[COLOR_COMPONENTS];
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			mutex_parent[c] = PTHREAD_MUTEX_INITIALIZER;
 			mutex_simd[c] = PTHREAD_MUTEX_INITIALIZER;
 			cond_frame_received[c] = PTHREAD_COND_INITIALIZER;
@@ -280,7 +278,7 @@ int main(int argc, char **argv)
 #endif
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			pthread_mutex_lock(&mutex_simd[c]);
 		}
 	}
@@ -365,7 +363,7 @@ int main(int argc, char **argv)
 	}
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			pthread_mutex_unlock(&mutex_simd[c]);
 			pthread_mutex_lock(&mutex_parent[c]);
 		}
@@ -374,7 +372,7 @@ int main(int argc, char **argv)
 	thread_done = true;
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			pthread_cond_signal(&cond_frame_received[c]);
 			pthread_mutex_unlock(&mutex_parent[c]);
 		}
@@ -390,7 +388,7 @@ int main(int argc, char **argv)
 	cudaDeviceReset();
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
-		if (!on_gpu[c]) {
+		if (!ON_GPU(c)) {
 			pthread_cond_destroy(&cond_frame_received[c]);
 			pthread_cond_destroy(&cond_frame_encoded[c]);
 			pthread_mutex_destroy(&mutex_parent[c]);

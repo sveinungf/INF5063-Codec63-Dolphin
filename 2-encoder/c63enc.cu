@@ -302,8 +302,10 @@ int main(int argc, char **argv)
 			printf("\rNo more frames from reader\n");
 
 			wait_for_writer(segNum^1);
+			wait_for_writer(segNum);
 
 			// Send interrupt to writer signaling that encoding has been finished
+			signal_writer(ENCODING_FINISHED, segNum^1);
 			signal_writer(ENCODING_FINISHED, segNum);
 			break;
 		}

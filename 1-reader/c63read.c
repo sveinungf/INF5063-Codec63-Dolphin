@@ -169,18 +169,18 @@ int main(int argc, char **argv) {
 	int segNum = 0;
 
 	while (1) {
-		wait_for_image_transfer(segNum);
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
+			// The encoder sends an interrupt when it is ready to receive the next frame
+			wait_for_encoder(segNum);
+		}
+
+		//wait_for_image_transfer(segNum);
 
 		int rc = read_yuv(infile, images[segNum]);
 
 		if (!rc) {
 			// No more data
 			break;
-		}
-
-		if (numframes >= NUM_IMAGE_SEGMENTS) {
-			// The encoder sends an interrupt when it is ready to receive the next frame
-			wait_for_encoder(segNum);
 		}
 
 		// Copy new frame to remote segment

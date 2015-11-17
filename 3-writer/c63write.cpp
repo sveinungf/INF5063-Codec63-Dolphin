@@ -130,6 +130,7 @@ static void *segment_handler(void *arg) {
 	pthread_mutex_lock(&thread_muts[threadNum]);
 	while (threads_done[threadNum] == 0) {
 		//clock_t start = clock();
+
 	  	pthread_cond_wait(&thread_conds[threadNum], &thread_muts[threadNum]);
 		if(threads_done[threadNum]) {
 			break;
@@ -143,7 +144,6 @@ static void *segment_handler(void *arg) {
 		// Write to buffer
 		cms[threadNum]->curframe->keyframe = ((int*) local_buffers[threadNum])[keyframe_offset];
 		write_frame_to_buffer(cms[threadNum], byte_vectors[threadNum], threadNum);
-
 		signal_encoder(threadNum);
 
 		// Attempt to write to disk
@@ -152,6 +152,8 @@ static void *segment_handler(void *arg) {
 			pthread_cond_wait(&write_cond, &write_mut);
 		}
 		write_buffer_to_file(byte_vectors[threadNum], cms[threadNum]->e_ctx.fp);
+
+
 		next_to_write = threadNum^1;
 
 		// Signal that writing is done
@@ -163,6 +165,7 @@ static void *segment_handler(void *arg) {
 
 		// Signal that thread is done
 		pthread_cond_signal(&thread_conds[threadNum]);
+
 	}
 	pthread_mutex_unlock(&thread_muts[threadNum]);
 	return NULL;
@@ -181,7 +184,7 @@ static void print_help()
   exit(EXIT_FAILURE);
 }
 
-void interrupt_handler(int signal)
+void interrupt_handler(int)
 {
 	SCITerminate();
 	exit(EXIT_FAILURE);
@@ -273,7 +276,7 @@ int main(int argc, char **argv)
   {
   	  printf("Frame %d:", frameNum);
   	  fflush(stdout);
-	  fsync(fd);
+  	  fsync(fd);
 
   	  wait_for_encoder(&done, &length, segNum);
 
@@ -295,6 +298,7 @@ int main(int argc, char **argv)
 	  }
 	  pthread_cond_signal(&thread_conds[segNum]);
 	  pthread_mutex_unlock(&thread_muts[segNum]);
+
 
 	  ++frameNum;
 

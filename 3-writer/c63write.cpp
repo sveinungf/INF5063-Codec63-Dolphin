@@ -204,11 +204,11 @@ int main(int argc, char **argv)
 		localSegmentSize += cms[0]->padw[c] * cms[0]->padh[c] * sizeof(int16_t);
 	}
 
-	local_buffers[0] = init_local_segment(localSegmentSize, 0);
-	local_buffers[1] = init_local_segment(localSegmentSize, 1);
-
-	set_offsets_and_pointers(cms[0], 0);
-	set_offsets_and_pointers(cms[1], 1);
+	int i;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		local_buffers[i] = init_local_segment(localSegmentSize, i);
+		set_offsets_and_pointers(cms[i], i);
+	}
 
 	/* Encode input frames */
 	int numframes = 0;

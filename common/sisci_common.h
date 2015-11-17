@@ -2,7 +2,6 @@
 #define SISCI_COMMON_H_
 
 #include <inttypes.h>
-#include <sisci_types.h>
 
 #define SCI_NO_FLAGS        0
 #define SCI_NO_CALLBACK     NULL
@@ -30,8 +29,6 @@ typedef enum {
 
 // Segments
 typedef enum {
-	SEGMENT_SYN,
-	SEGMENT_ACK,
 	SEGMENT_READER_IMAGE,
 	SEGMENT_READER_IMAGE2,
 	SEGMENT_ENCODER_IMAGE,
@@ -48,42 +45,6 @@ struct segment_yuv
 	const volatile uint8_t* U;
 	const volatile uint8_t* V;
 };
-
-typedef struct message_protocol {
-	int32_t frameNum;
-	int32_t status;
-}message_t;
-
-typedef struct local_syn_info {
-	sci_desc_t sd;
-	sci_local_segment_t segment;
-	sci_map_t map;
-	volatile message_t *msg;
-}local_syn_t;
-
-typedef struct local_ack_info {
-	sci_desc_t sd;
-	sci_local_segment_t segment;
-	sci_map_t map;
-	volatile message_t *msg;
-}local_ack_t;
-
-typedef struct remote_syn_info {
-	sci_desc_t sd;
-	sci_remote_segment_t segment;
-	sci_map_t map;
-	sci_sequence_t sequence;
-}remote_syn_t;
-
-typedef struct remote_ack_info {
-	sci_desc_t sd;
-	sci_remote_segment_t segment;
-	sci_map_t map;
-	sci_sequence_t sequence;
-}remote_ack_t;
-
-
-
 
 static inline uint32_t getLocalSegId(unsigned int localNodeId, unsigned int remoteNodeId, c63_segment segment)
 {

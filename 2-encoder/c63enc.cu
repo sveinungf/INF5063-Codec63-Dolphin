@@ -335,7 +335,7 @@ int main(int argc, char **argv)
 		// Reader can transfer next frame
 		signal_reader(segNum);
 
-		printf(", encoded\n");
+		printf(", encoded");
 		fflush(stdout);
 
 		wait_for_image_transfer(segNum);
@@ -349,6 +349,7 @@ int main(int argc, char **argv)
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
 		transfer_encoded_data(cm->curframe->keyframe, segNum);
+		printf(", sent!\n");
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;

@@ -18,7 +18,7 @@ else
 endif
 
 ### SISCI ###
-DIS_SRC = /home/inf5063-g03/exam3/DIS/src
+DIS_SRC ?= /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api

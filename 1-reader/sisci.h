@@ -16,11 +16,10 @@ void cleanup_segments();
 
 void send_width_and_height(uint32_t width, uint32_t height);
 
+void signal_encoder(encoder_signal signal, int segNum);
 void wait_for_encoder(int segNum);
 
-void transfer_image_async(int imgNum);
 void wait_for_image_transfer(int segNum);
-
-void signal_encoder(encoder_signal signal, int segNum);
+void transfer_image_async(int imgNum);
 
 #endif /* SISCI_H_ */

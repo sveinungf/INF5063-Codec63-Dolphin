@@ -10,16 +10,16 @@
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
-sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS];
-sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS];
+static sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS];
+static sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS];
 static volatile uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
 
 // Reader
-unsigned int readerNodeId;
-sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
-sci_remote_interrupt_t interruptsToReader[NUM_IMAGE_SEGMENTS];
-sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS];
-sci_map_t imageMaps[NUM_IMAGE_SEGMENTS];
+static unsigned int readerNodeId;
+static sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
+static sci_remote_interrupt_t interruptsToReader[NUM_IMAGE_SEGMENTS];
+static sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS];
+static sci_map_t imageMaps[NUM_IMAGE_SEGMENTS];
 
 // Writer
 static unsigned int segmentSizeWriter;
@@ -54,6 +54,9 @@ static dct_t *residuals_U[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_V[NUM_IMAGE_SEGMENTS];
 
 
+/*
+ * Initializes SISCI handles
+ */
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode)
 {
 	localAdapterNo = localAdapter;
@@ -101,7 +104,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	}
 
 	// Interrupts to the reader
-	printf("Connecting to interrupt on reader... ");
+	printf("Connecting to interrupts on reader... ");
 	fflush(stdout);
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		do
@@ -114,7 +117,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	printf("Done!\n");
 
 	// Interrupts to the writer
-	printf("Connecting to interrupt on writer... ");
+	printf("Connecting to interrupts on writer... ");
 	fflush(stdout);
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		do
@@ -127,6 +130,9 @@ void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int
 	printf("Done!\n");
 }
 
+/*
+ * Removes interrupts and descriptors
+ */
 void cleanup_SISCI()
 {
 	sci_error_t error;
@@ -159,6 +165,9 @@ void cleanup_SISCI()
 }
 
 
+/*
+ * Set various sizes and offsets
+ */
 void set_sizes_offsets(struct c63_common *cm) {
 	static const int Y = Y_COMPONENT;
 	static const int U = U_COMPONENT;
@@ -182,6 +191,9 @@ void set_sizes_offsets(struct c63_common *cm) {
 
 }
 
+/*
+ * Initializes an image segment used for transfers between the reader and the encoder
+ */
 struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 {
 	struct segment_yuv image;
@@ -193,6 +205,9 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	unsigned int imageSize = imageSizeY + imageSizeU + imageSizeV;
 	unsigned int segmentSize = imageSize;
 
+	/*
+	 * NOTE: Could not encode foreman.yuv without performing this check
+	 */
 	if(segmentSize < MIN_SEG_SZ) {
 		segmentSize = MIN_SEG_SZ;
 	}
@@ -201,6 +216,11 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	SCICreateSegment(reader_sds[segNum], &imageSegments[segNum], localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
 	sisci_assert(error);
 
+	/*
+	 * NOTE: Could not encode foreman.yuv without tripling the CUDA segment size
+	 * The SISCI API reported error 904 - "out of local resources"
+	 * The large video files worked without problems
+	 */
 	cudaMalloc((void**)&cudaBuffers[segNum], 3*segmentSize);
 
 	SCIAttachPhysicalMemory(0, (void*)cudaBuffers[segNum], 0, segmentSize, imageSegments[segNum], SCI_FLAG_CUDA_BUFFER, &error);
@@ -226,6 +246,9 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	return image;
 }
 
+/*
+ * Connects to a remote segment on the writer
+ */
 void init_remote_encoded_data_segment(int segNum)
 {
 	uint32_t remoteSegmentId = getRemoteSegId(localNodeId, writerNodeId, (c63_segment)(SEGMENT_WRITER_ENCODED + segNum));
@@ -242,7 +265,9 @@ void init_remote_encoded_data_segment(int segNum)
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
 }
 
-
+/*
+ * Initializes the local SISCI segments on the encoder
+ */
 void init_local_encoded_data_segments() {
 	sci_error_t error;
 	uint32_t localSegmentId;
@@ -267,12 +292,15 @@ void init_local_encoded_data_segments() {
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[U_COMPONENT]);
 		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[V_COMPONENT]);
 
-		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
 		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
+		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
 		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
 	}
 }
 
+/*
+ * Cleans up local SISCI segments
+ */
 static void cleanup_local_segment(sci_local_segment_t* segment, sci_map_t* map)
 {
 	sci_error_t error;
@@ -287,6 +315,9 @@ static void cleanup_local_segment(sci_local_segment_t* segment, sci_map_t* map)
 	sisci_check(error);
 }
 
+/*
+ * Disconnects a remote segment
+ */
 static void cleanup_remote_segment(sci_remote_segment_t* segment)
 {
 	sci_error_t error;
@@ -295,6 +326,10 @@ static void cleanup_remote_segment(sci_remote_segment_t* segment)
 	sisci_check(error);
 }
 
+/*
+ * Cleans up local and remote SISCI segments
+ * Frees the memory on the GPU
+ */
 void cleanup_segments()
 {
 	int i;
@@ -307,6 +342,9 @@ void cleanup_segments()
 
 }
 
+/*
+ * Receives the video file dimensions from the reader
+ */
 void receive_width_and_height(uint32_t* width, uint32_t* height)
 {
 	sci_error_t error;
@@ -325,6 +363,9 @@ void receive_width_and_height(uint32_t* width, uint32_t* height)
 	printf("Done!\n");
 }
 
+/*
+ * Sends the video file dimensions to the writer
+ */
 void send_width_and_height(uint32_t width, uint32_t height) {
 	sci_error_t error;
 
@@ -333,30 +374,33 @@ void send_width_and_height(uint32_t width, uint32_t height) {
 	sisci_assert(error);
 }
 
-int wait_for_reader(int segNum)
-{
-	sci_error_t error;
-
-	static unsigned int done_size = sizeof(uint8_t);
-	uint8_t done;
-
-	SCIWaitForDataInterrupt(interruptsFromReader[segNum], &done, &done_size, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-
-	return done;
+/*
+ * Waits until the previous segment transfer has completed
+ */
+void wait_for_image_transfer(int segNum) {
+	while(!transfer_completed[segNum]);
+	transfer_completed[segNum] = 0;
 }
 
-void wait_for_writer(int segNum)
-{
-	sci_error_t error;
+/*
+ * Copies data from the temporary buffers into the SISCI segment used to
+ * transfer data to the writer
+ */
+void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizes[Y_COMPONENT]);
+	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizes[U_COMPONENT]);
+	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizes[V_COMPONENT]);
 
-	SCIWaitForInterrupt(interruptsFromWriter[segNum], SCI_INFINITE_TIMEOUT,
-			SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizes[Y_COMPONENT]);
+	memcpy(residuals_U[segNum], residuals->Udct, residualsSizes[U_COMPONENT]);
+	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizes[V_COMPONENT]);
 }
 
 
-sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t status) {
+/*
+ * Callback function for signalling the completion of a DMA transfer
+ */
+static sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t status) {
 	sci_callback_action_t retVal;
 
 	if (status == SCI_ERR_OK) {
@@ -373,19 +417,12 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t statu
 	}
 
 	return retVal;
-
 }
 
-void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizes[Y_COMPONENT]);
-	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizes[U_COMPONENT]);
-	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizes[V_COMPONENT]);
-
-	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizes[Y_COMPONENT]);
-	memcpy(residuals_U[segNum], residuals->Udct, residualsSizes[U_COMPONENT]);
-	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizes[V_COMPONENT]);
-}
-
+/*
+ * Transfers data asynchronously to the writer
+ * A callback is used to signal the writer about the completion
+ */
 void transfer_encoded_data(int keyframe_val, int segNum)
 {
 	sci_error_t error;
@@ -398,11 +435,10 @@ void transfer_encoded_data(int keyframe_val, int segNum)
 
 }
 
-void wait_for_image_transfer(int segNum) {
-	while(!transfer_completed[segNum]);
-	transfer_completed[segNum] = 0;
-}
 
+/*
+ * Signals the reader that the encoder is ready for a new image
+ */
 void signal_reader(int segNum)
 {
 	sci_error_t error;
@@ -411,6 +447,28 @@ void signal_reader(int segNum)
 	sisci_assert(error);
 }
 
+
+/*
+ * Waits until the reader signals that it has transferred a new image
+ */
+int wait_for_reader(int segNum)
+{
+	sci_error_t error;
+
+	static unsigned int done_size = sizeof(uint8_t);
+	uint8_t done;
+
+	SCIWaitForDataInterrupt(interruptsFromReader[segNum], &done, &done_size, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+
+	return done;
+}
+
+
+/*
+ * Signals the writer that new data has been transferred
+ * Invoked by the callback function
+ */
 void signal_writer(writer_signal signal, int segNum)
 {
 	sci_error_t error;
@@ -427,5 +485,18 @@ void signal_writer(writer_signal signal, int segNum)
 	}
 
 	SCITriggerDataInterrupt(interruptsToWriter[segNum], (void*) &data, sizeof(uint8_t), SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+}
+
+
+/*
+ * Waits until the writer signals that it is ready for more data
+ */
+void wait_for_writer(int segNum)
+{
+	sci_error_t error;
+
+	SCIWaitForInterrupt(interruptsFromWriter[segNum], SCI_INFINITE_TIMEOUT,
+			SCI_NO_FLAGS, &error);
 	sisci_assert(error);
 }

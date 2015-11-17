@@ -103,14 +103,14 @@ static struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& 
 		int mb_num = cm->mb_cols[c] * cm->mb_rows[c];
 
 		if (ON_GPU(c)) {
-			cudaMallocHost((void**) residuals[c], res_size);
-
 			cudaMallocHost((void**) &f->mbs[c], mb_num * sizeof(struct macroblock));
 			cudaMemsetAsync(f->mbs[c], 0, mb_num * sizeof(struct macroblock), c63_cuda.stream[c]);
-		} else {
-			*residuals[c] = (int16_t*) malloc(res_size);
 
+			cudaMallocHost((void**) residuals[c], res_size);
+		} else {
 			f->mbs[c] = (struct macroblock*) calloc(mb_num, sizeof(struct macroblock));
+
+			*residuals[c] = (int16_t*) malloc(res_size);
 		}
 	}
 
@@ -132,11 +132,11 @@ static void destroy_frame(struct frame *f)
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
 		if (ON_GPU(c)) {
-			cudaFreeHost(residuals[c]);
 			cudaFreeHost(f->mbs[c]);
+			cudaFreeHost(residuals[c]);
 		} else {
-			free(residuals[c]);
 			free(f->mbs[c]);
+			free(residuals[c]);
 		}
 	}
 

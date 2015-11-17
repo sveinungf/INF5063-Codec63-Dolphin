@@ -15,30 +15,24 @@ using namespace std;
 
 
 int frequencies[2][12];
+static uint64_t bit_buffer = 0;
+static unsigned int bit_buffer_width = 0;
 
-static uint64_t bit_buffers[2] = {0, 0};
-static unsigned int bit_buffer_widths[2] = {0, 0};
-
-
-static inline void put_byte(vector<uint8_t>& byte_vector, int byte)
+static inline void put_byte(vector<uint8_t>& byte_vector, uint8_t byte)
 {
 	byte_vector.push_back(byte);
 }
 
-static inline void put_bytes(vector<uint8_t>& byte_vector, const void* data, unsigned int len)
+static inline void put_bytes(vector<uint8_t>& byte_vector, const uint8_t* data, unsigned int len)
 {
-	const uint8_t* bytes = (const uint8_t*) data;
-	for (unsigned int i = 0; i < len; ++i)
-	{
-		byte_vector.push_back(bytes[i]);
-	}
+	byte_vector.insert(byte_vector.end(), data, data + len);
 }
 
-static inline void flush_bytes(vector<uint8_t>& byte_vector, int threadNum)
+static inline void flush_bytes(vector<uint8_t>& byte_vector)
 {
-	while (bit_buffer_widths[threadNum] >= 8)
+	while (bit_buffer_width >= 8)
 	{
-		uint8_t b = (uint8_t) (bit_buffers[threadNum] >> (bit_buffer_widths[threadNum] - 8));
+		uint8_t b = (uint8_t) (bit_buffer >> (bit_buffer_width - 8));
 
 		put_byte(byte_vector, b);
 
@@ -47,7 +41,7 @@ static inline void flush_bytes(vector<uint8_t>& byte_vector, int threadNum)
 			put_byte(byte_vector, 0);
 		}
 
-		bit_buffer_widths[threadNum] -= 8;
+		bit_buffer_width -= 8;
 	}
 }
 
@@ -57,7 +51,7 @@ static inline void flush_bytes(vector<uint8_t>& byte_vector, int threadNum)
  * writing using another function.
  */
 static inline void put_bits(vector<uint8_t>& byte_vector, uint16_t bits,
-		uint8_t n, int threadNum)
+		uint8_t n)
 {
 	assert(n <= 24 && "Error writing bit");
 
@@ -66,26 +60,26 @@ static inline void put_bits(vector<uint8_t>& byte_vector, uint16_t bits,
 		return;
 	}
 
-	if ((bit_buffer_widths[threadNum] + n) >= 64)
+	if ((bit_buffer_width + n) >= 64)
 	{
-		flush_bytes(byte_vector, threadNum);
+		flush_bytes(byte_vector);
 	}
 
-	bit_buffers[threadNum] <<= n;
-	bit_buffers[threadNum] |= bits & ((1 << n) - 1);
-	bit_buffer_widths[threadNum] += n;
+	bit_buffer <<= n;
+	bit_buffer |= bits & ((1 << n) - 1);
+	bit_buffer_width += n;
 }
 
 /**
  * Flushes the bitBuffer by writing zeroes to fill a full byte
  */
-static inline void flush_bits(vector<uint8_t>& byte_vector, int threadNum)
+static inline void flush_bits(vector<uint8_t>& byte_vector)
 {
-	flush_bytes(byte_vector, threadNum);
+	flush_bytes(byte_vector);
 
-	if (bit_buffers[threadNum] > 0)
+	if (bit_buffer > 0)
 	{
-		uint8_t b = bit_buffers[threadNum] << (8 - bit_buffer_widths[threadNum]);
+		uint8_t b = bit_buffer << (8 - bit_buffer_width);
 		put_byte(byte_vector, b);
 
 		if (b == 0xff)
@@ -94,8 +88,8 @@ static inline void flush_bits(vector<uint8_t>& byte_vector, int threadNum)
 		}
 	}
 
-	bit_buffers[threadNum] = 0;
-	bit_buffer_widths[threadNum] = 0;
+	bit_buffer = 0;
+	bit_buffer_width = 0;
 }
 
 /* Start of Image (SOI) marker, contains no payload. */
@@ -254,7 +248,8 @@ static inline uint8_t bit_width(int16_t i)
 }
 
 static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int16_t *in_data,
-		uint32_t width, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC, int32_t cc, int channel, int threadNum)
+		uint32_t width, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC,
+		int32_t cc, int channel)
 {
 	uint32_t i, j;
 
@@ -263,7 +258,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 			+ uoffset / 8];
 
 	/* Use inter pred? */
-	put_bits(byte_vector, mb->use_mv, 1, threadNum);
+	put_bits(byte_vector, mb->use_mv, 1);
 
 	if (mb->use_mv)
 	{
@@ -274,7 +269,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 			reuse_prev_mv = 1;
 		}
 
-		put_bits(byte_vector, reuse_prev_mv, 1, threadNum);
+		put_bits(byte_vector, reuse_prev_mv, 1);
 
 		if (!reuse_prev_mv)
 		{
@@ -289,8 +284,8 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 				--val;
 			}
 
-			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz], threadNum);
-			put_bits(byte_vector, val, sz, threadNum);
+			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz]);
+			put_bits(byte_vector, val, sz);
 			/* ++frequencies[cc][sz]; */
 
 			/* Encode MV y-coord */
@@ -301,8 +296,8 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 				--val;
 			}
 
-			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz], threadNum);
-			put_bits(byte_vector, val, sz, threadNum);
+			put_bits(byte_vector, MVVLC[sz], MVVLC_Size[sz]);
+			put_bits(byte_vector, val, sz);
 			/* ++frequencies[cc][sz]; */
 		}
 	}
@@ -336,13 +331,13 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 	*prev_DC = block[0];
 
 	uint8_t size = bit_width(dc);
-	put_bits(byte_vector, DCVLC[cc][size], DCVLC_Size[cc][size], threadNum);
+	put_bits(byte_vector, DCVLC[cc][size], DCVLC_Size[cc][size]);
 
 	if (dc < 0)
 	{
 		dc = dc - 1;
 	}
-	put_bits(byte_vector, dc, size, threadNum);
+	put_bits(byte_vector, dc, size);
 
 	/* find the last nonzero entry of the ac-coefficients */
 	for (j = 64; j > 1 && !block[j - 1]; j--)
@@ -356,7 +351,7 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 		{
 			if (++num_ac == 16)
 			{
-				put_bits(byte_vector, ACVLC[cc][15][0], ACVLC_Size[cc][15][0], threadNum);
+				put_bits(byte_vector, ACVLC[cc][15][0], ACVLC_Size[cc][15][0]);
 				num_ac = 0;
 			}
 		}
@@ -364,14 +359,14 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 		{
 			uint8_t size = bit_width(ac);
 			put_bits(byte_vector, ACVLC[cc][num_ac][size],
-					ACVLC_Size[cc][num_ac][size], threadNum);
+					ACVLC_Size[cc][num_ac][size]);
 
 			if (ac < 0)
 			{
 				--ac;
 			}
 
-			put_bits(byte_vector, ac, size, threadNum);
+			put_bits(byte_vector, ac, size);
 			num_ac = 0;
 		}
 	}
@@ -379,13 +374,13 @@ static void write_block(struct c63_common *cm, vector<uint8_t>& byte_vector, int
 	/* Put end of block marker */
 	if (j < 64)
 	{
-		put_bits(byte_vector, ACVLC[cc][0][0], ACVLC_Size[cc][0][0], threadNum);
+		put_bits(byte_vector, ACVLC[cc][0][0], ACVLC_Size[cc][0][0]);
 	}
 }
 
 static void write_interleaved_data_MCU(struct c63_common *cm, vector<uint8_t>& byte_vector,
 		int16_t *dct, uint32_t wi, uint32_t he, uint32_t h, uint32_t v, uint32_t x, uint32_t y,
-		int16_t *prev_DC, int32_t cc, int channel, int threadNum)
+		int16_t *prev_DC, int32_t cc, int channel)
 {
 	uint32_t i, j, ii, jj;
 
@@ -399,12 +394,12 @@ static void write_interleaved_data_MCU(struct c63_common *cm, vector<uint8_t>& b
 			ii = wi - 8;
 			ii = MIN(i, ii);
 
-			write_block(cm, byte_vector, dct, wi, ii, jj, prev_DC, cc, channel, threadNum);
+			write_block(cm, byte_vector, dct, wi, ii, jj, prev_DC, cc, channel);
 		}
 	}
 }
 
-static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_vector, int threadNum)
+static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_vector)
 {
 	int16_t prev_DC[3] = { 0, 0, 0 };
 	uint32_t u, v;
@@ -424,19 +419,21 @@ static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_
 		for (u = 0; u < ublocks; ++u)
 		{
 			write_interleaved_data_MCU(cm, byte_vector, cm->curframe->residuals->Ydct, cm->ypw,
-					cm->yph, YX, YY, u, v, &prev_DC[0], yhtbl, 0, threadNum);
+					cm->yph, YX, YY, u, v, &prev_DC[0], yhtbl, 0);
 			write_interleaved_data_MCU(cm, byte_vector, cm->curframe->residuals->Udct, cm->upw,
-					cm->uph, UX, UY, u, v, &prev_DC[1], uhtbl, 1, threadNum);
+					cm->uph, UX, UY, u, v, &prev_DC[1], uhtbl, 1);
 			write_interleaved_data_MCU(cm, byte_vector, cm->curframe->residuals->Vdct, cm->vpw,
-					cm->vph, VX, VY, u, v, &prev_DC[2], vhtbl, 2., threadNum);
+					cm->vph, VX, VY, u, v, &prev_DC[2], vhtbl, 2);
 		}
 	}
 
-	flush_bits(byte_vector, threadNum);
+	flush_bits(byte_vector);
 }
 
-void write_frame_to_buffer(struct c63_common *cm, vector<uint8_t>& byte_vector, int threadNum)
+vector<uint8_t> write_frame_to_buffer(struct c63_common *cm)
 {
+	vector<uint8_t> byte_vector;
+
 	/* Write headers */
 
 	/* Start Of Image */
@@ -450,10 +447,12 @@ void write_frame_to_buffer(struct c63_common *cm, vector<uint8_t>& byte_vector, 
 	/* Start of Scan */
 	write_SOS(byte_vector);
 
-	write_interleaved_data(cm, byte_vector, threadNum);
+	write_interleaved_data(cm, byte_vector);
 
 	/* End Of Image */
 	write_EOI(byte_vector);
+
+	return byte_vector;
 }
 
 void write_buffer_to_file(const vector<uint8_t>& byte_vector, FILE* file)

@@ -18,6 +18,8 @@ static sci_map_t localMaps[NUM_IMAGE_SEGMENTS];
 static sci_local_data_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 
+static unsigned int interruptFromEncoderNo;
+
 
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	localAdapterNo = localAdapter;
@@ -39,7 +41,6 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	sisci_assert(error);
 
 	// Create local interrupt descriptor(s) for communication between encoder machine and writer machine
-	unsigned int interruptFromEncoderNo;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		interruptFromEncoderNo = ENCODED_FRAME_TRANSFERRED + i;
 		SCICreateDataInterrupt(sds[i], &interruptsFromEncoder[i], localAdapterNo, &interruptFromEncoderNo, SCI_NO_CALLBACK, NULL, SCI_FLAG_FIXED_INTNO, &error);

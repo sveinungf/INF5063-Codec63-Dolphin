@@ -118,7 +118,8 @@ static void* thread_c63_encode_image_host(void*)
 	}
 
 	pthread_mutex_unlock(&mutex_parent[component]);
-	return NULL;
+
+	return nullptr;
 }
 
 static inline void c63_encode_image_gpu(const struct c63_common_gpu& cm_gpu)
@@ -194,7 +195,7 @@ int main(int argc, char **argv)
 	sigemptyset(&int_handler.sa_mask);
 	int_handler.sa_flags = 0;
 
-	sigaction(SIGINT, &int_handler, NULL);
+	sigaction(SIGINT, &int_handler, nullptr);
 
 	int c;
 
@@ -269,13 +270,13 @@ int main(int argc, char **argv)
 	}
 
 #if !(Y_ON_GPU)
-	pthread_create(&simd_threads[Y], NULL, thread_c63_encode_image_host<Y>, NULL);
+	pthread_create(&simd_threads[Y], nullptr, thread_c63_encode_image_host<Y>, nullptr);
 #endif
 #if !(U_ON_GPU)
-	pthread_create(&simd_threads[U], NULL, thread_c63_encode_image_host<U>, NULL);
+	pthread_create(&simd_threads[U], nullptr, thread_c63_encode_image_host<U>, nullptr);
 #endif
 #if !(V_ON_GPU)
-	pthread_create(&simd_threads[V], NULL, thread_c63_encode_image_host<V>, NULL);
+	pthread_create(&simd_threads[V], nullptr, thread_c63_encode_image_host<V>, nullptr);
 #endif
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {

@@ -430,10 +430,8 @@ static void write_interleaved_data(struct c63_common *cm, vector<uint8_t>& byte_
 	flush_bits(byte_vector);
 }
 
-void /*vector<uint8_t>*/ write_frame_to_buffer(struct c63_common *cm, vector<uint8_t>& byte_vector)
+void write_frame_to_buffer(struct c63_common *cm, vector<uint8_t>& byte_vector)
 {
-	//vector<uint8_t> byte_vector;
-
 	/* Write headers */
 
 	/* Start Of Image */
@@ -451,8 +449,6 @@ void /*vector<uint8_t>*/ write_frame_to_buffer(struct c63_common *cm, vector<uin
 
 	/* End Of Image */
 	write_EOI(byte_vector);
-
-	//return byte_vector;
 }
 
 void write_buffer_to_file(const vector<uint8_t>& byte_vector, FILE* file)

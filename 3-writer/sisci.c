@@ -66,7 +66,9 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
  * Used to receive the dimensions of the video file from the encoder
  */
 void receive_width_and_height(uint32_t *width, uint32_t *height) {
-	printf("Waiting for width and height from encoder...\n");
+	printf("Waiting for width and height from encoder...");
+	fflush(stdout);
+
 	uint32_t widthAndHeight[2];
 	unsigned int length = 2*sizeof(uint32_t);
 
@@ -77,7 +79,7 @@ void receive_width_and_height(uint32_t *width, uint32_t *height) {
 	*width = widthAndHeight[0];
 	*height = widthAndHeight[1];
 
-	printf("Done\n");
+	printf("Done!\n");
 }
 
 /*

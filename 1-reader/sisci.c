@@ -58,7 +58,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 	}
 
 	// Interrupts to the encoder
-	printf("Connecting to interrupts on encoder... \n");
+	printf("Connecting to interrupts on encoder...");
 	fflush(stdout);
 
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {

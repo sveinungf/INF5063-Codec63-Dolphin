@@ -292,8 +292,8 @@ void init_local_encoded_data_segments() {
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[U_COMPONENT]);
 		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[V_COMPONENT]);
 
-		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
 		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
+		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
 		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
 	}
 }

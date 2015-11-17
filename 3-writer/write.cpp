@@ -18,18 +18,14 @@ int frequencies[2][12];
 static uint64_t bit_buffer = 0;
 static unsigned int bit_buffer_width = 0;
 
-static inline void put_byte(vector<uint8_t>& byte_vector, int byte)
+static inline void put_byte(vector<uint8_t>& byte_vector, uint8_t byte)
 {
 	byte_vector.push_back(byte);
 }
 
-static inline void put_bytes(vector<uint8_t>& byte_vector, const void* data, unsigned int len)
+static inline void put_bytes(vector<uint8_t>& byte_vector, const uint8_t* data, unsigned int len)
 {
-	const uint8_t* bytes = (const uint8_t*) data;
-	for (unsigned int i = 0; i < len; ++i)
-	{
-		byte_vector.push_back(bytes[i]);
-	}
+	byte_vector.insert(byte_vector.end(), data, data + len);
 }
 
 static inline void flush_bytes(vector<uint8_t>& byte_vector)

@@ -264,8 +264,7 @@ int main(int argc, char **argv)
 
 	cleanup_SISCI();
 
-	int i;
-	for (i = 0; i < 2; ++i)
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i)
 	{
 		free(cms[i]->curframe->residuals);
 		free(cms[i]->curframe);

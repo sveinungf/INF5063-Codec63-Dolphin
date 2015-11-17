@@ -59,6 +59,10 @@ else ifeq ($(VIDEO),2)
 	HEIGHT = 1080
 	INPUT_VIDEO = /opt/cipr/tractor.yuv
 	REFERENCE_VIDEO = ~/yuv/reference/tractor.yuv
+else ifeq ($(VIDEO),3)
+	WIDTH = 4096
+	HEIGHT = 1680
+	INPUT_VIDEO = /opt/cipr/bagadus.yuv
 endif
 
 C63_FILE = $(DIR_TEMP)/test.c63

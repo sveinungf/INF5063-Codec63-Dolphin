@@ -10,45 +10,40 @@
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
-sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_desc_t))));
-sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_desc_t))));
-uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
+sci_desc_t reader_sds[NUM_IMAGE_SEGMENTS];
+sci_desc_t writer_sds[NUM_IMAGE_SEGMENTS];
+static volatile uint8_t* cudaBuffers[NUM_IMAGE_SEGMENTS];
 
 // Reader
 unsigned int readerNodeId;
 sci_local_data_interrupt_t interruptsFromReader[NUM_IMAGE_SEGMENTS];
 sci_remote_interrupt_t interruptsToReader[NUM_IMAGE_SEGMENTS];
-sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_local_segment_t))));
-sci_map_t imageMaps[NUM_IMAGE_SEGMENTS] __attribute__((aligned(sizeof(sci_map_t))));
+sci_local_segment_t imageSegments[NUM_IMAGE_SEGMENTS];
+sci_map_t imageMaps[NUM_IMAGE_SEGMENTS];
 
 // Writer
 static unsigned int segmentSizeWriter;
 static unsigned int writerNodeId;
-static sci_local_interrupt_t interruptsFromWriter[NUM_IMAGE_SEGMENTS];
+
 static sci_remote_data_interrupt_t interruptsToWriter[NUM_IMAGE_SEGMENTS];
-static int callback_arg[NUM_IMAGE_SEGMENTS];
-static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
+static sci_local_interrupt_t interruptsFromWriter[NUM_IMAGE_SEGMENTS];
+
 static sci_local_segment_t encodedDataSegmentsLocal[NUM_IMAGE_SEGMENTS];
+static sci_remote_segment_t encodedDataSegmentsWriter[NUM_IMAGE_SEGMENTS];
 static sci_map_t encodedDataMapsLocal[NUM_IMAGE_SEGMENTS];
+
 static sci_dma_queue_t dmaQueues[NUM_IMAGE_SEGMENTS];
+static int callback_arg[NUM_IMAGE_SEGMENTS];
 
 static volatile int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
 
 static unsigned int keyframeSize;
-static unsigned int mbSizeY;
-static unsigned int mbSizeU;
-static unsigned int mbSizeV;
-static unsigned int residualsSizeY;
-static unsigned int residualsSizeU;
-static unsigned int residualsSizeV;
+static unsigned int mbSizes[COLOR_COMPONENTS];
+static unsigned int residualsSizes[COLOR_COMPONENTS];
 
 static unsigned int keyframe_offset;
-static unsigned int mbOffsetY;
-static unsigned int residualsY_offset;
-static unsigned int mbOffsetU;
-static unsigned int residualsU_offset;
-static unsigned int mbOffsetV;
-static unsigned int residualsV_offset;
+static unsigned int mbOffsets[COLOR_COMPONENTS];
+static unsigned int residualsOffsets[COLOR_COMPONENTS];
 
 static int *keyframe[NUM_IMAGE_SEGMENTS];
 static struct macroblock *mb_Y[NUM_IMAGE_SEGMENTS];
@@ -58,13 +53,6 @@ static dct_t *residuals_Y[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_U[NUM_IMAGE_SEGMENTS];
 static dct_t *residuals_V[NUM_IMAGE_SEGMENTS];
 
-
-volatile struct macroblock *remote_mb_Y[NUM_IMAGE_SEGMENTS];
-volatile struct macroblock *remote_mb_U[NUM_IMAGE_SEGMENTS];
-volatile struct macroblock *remote_mb_V[NUM_IMAGE_SEGMENTS];
-volatile uint8_t *remote_residuals_Y[NUM_IMAGE_SEGMENTS];
-volatile uint8_t *remote_residuals_U[NUM_IMAGE_SEGMENTS];
-volatile uint8_t *remote_residuals_V[NUM_IMAGE_SEGMENTS];
 
 void init_SISCI(unsigned int localAdapter, unsigned int readerNode, unsigned int writerNode)
 {
@@ -143,13 +131,11 @@ void cleanup_SISCI()
 {
 	sci_error_t error;
 
-	SCIDisconnectInterrupt(interruptsToReader[0], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-	SCIDisconnectInterrupt(interruptsToReader[1], SCI_NO_FLAGS, &error);
-	sisci_check(error);
-
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		SCIDisconnectInterrupt(interruptsToReader[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
 		do {
 			SCIRemoveInterrupt(interruptsFromWriter[i], SCI_NO_FLAGS, &error);
 		} while (error != SCI_ERR_OK);
@@ -179,20 +165,20 @@ void set_sizes_offsets(struct c63_common *cm) {
 	static const int V = V_COMPONENT;
 
     keyframeSize = sizeof(int);
-    mbSizeY = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
-    mbSizeU = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
-    mbSizeV = cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
-    residualsSizeY = cm->ypw * cm->yph * sizeof(int16_t);
-    residualsSizeU = cm->upw * cm->uph * sizeof(int16_t);
-    residualsSizeV = cm->vpw * cm->vph * sizeof(int16_t);
+    mbSizes[Y] = cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+    mbSizes[U] = cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
+    mbSizes[V] = cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
+    residualsSizes[Y] = cm->ypw * cm->yph * sizeof(int16_t);
+    residualsSizes[U] = cm->upw * cm->uph * sizeof(int16_t);
+    residualsSizes[V] = cm->vpw * cm->vph * sizeof(int16_t);
 
     keyframe_offset = 0;
-    mbOffsetY = keyframe_offset + keyframeSize;
-    mbOffsetU = mbOffsetY + mbSizeY;
-    mbOffsetV = mbOffsetU + mbSizeU;
-    residualsY_offset = mbOffsetV + mbSizeV;
-    residualsU_offset = residualsY_offset + residualsSizeY;
-    residualsV_offset = residualsU_offset + residualsSizeU;
+    mbOffsets[Y] = keyframe_offset + keyframeSize;
+    mbOffsets[U] = mbOffsets[Y] + mbSizes[Y];
+    mbOffsets[V] = mbOffsets[U] + mbSizes[U];
+    residualsOffsets[Y] = mbOffsets[V] + mbSizes[V];
+    residualsOffsets[U] = residualsOffsets[Y] + residualsSizes[Y];
+    residualsOffsets[V] = residualsOffsets[U] + residualsSizes[U];
 
 }
 
@@ -217,12 +203,7 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 
 	cudaMalloc((void**)&cudaBuffers[segNum], 3*segmentSize);
 
-	struct cudaPointerAttributes attributes;
-	cudaPointerGetAttributes(&attributes, (void*)cudaBuffers[segNum]);
-
-	printf("addr: %ld\n", (long unsigned int) attributes.devicePointer);
-
-	SCIAttachPhysicalMemory(0, attributes.devicePointer, 0, segmentSize, imageSegments[segNum], SCI_FLAG_CUDA_BUFFER, &error);
+	SCIAttachPhysicalMemory(0, (void*)cudaBuffers[segNum], 0, segmentSize, imageSegments[segNum], SCI_FLAG_CUDA_BUFFER, &error);
 	sisci_assert(error);
 
 	void* buffer = SCIMapLocalSegment(imageSegments[segNum], &imageMaps[segNum], 0, segmentSize, NULL, SCI_NO_FLAGS, &error);
@@ -261,16 +242,6 @@ void init_remote_encoded_data_segment(int segNum)
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
 }
 
-void get_pointers(struct frame *frame, int segNum) {
-	frame->mbs[Y_COMPONENT] = (struct macroblock*)mb_Y[segNum];
-	frame->mbs[U_COMPONENT] = (struct macroblock*)mb_U[segNum];
-	frame->mbs[V_COMPONENT] = (struct macroblock*)mb_V[segNum];
-
-	frame->residuals->Ydct = (int16_t*)residuals_Y[segNum];
-	frame->residuals->Udct = (int16_t*)residuals_U[segNum];
-	frame->residuals->Vdct = (int16_t*)residuals_V[segNum];
-}
-
 
 void init_local_encoded_data_segments() {
 	sci_error_t error;
@@ -281,11 +252,8 @@ void init_local_encoded_data_segments() {
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		localSegmentId = getLocalSegId(localNodeId, writerNodeId, (c63_segment)(SEGMENT_ENCODER_ENCODED + i));
 
-		printf("size: %d\n", segmentSizeWriter);
 		SCICreateSegment(writer_sds[i], &encodedDataSegmentsLocal[i], localSegmentId, segmentSizeWriter, SCI_NO_CALLBACK, NULL, SCI_NO_FLAGS, &error);
 		sisci_assert(error);
-
-		printf("i: %d\n", i);
 
 		SCIPrepareSegment(encodedDataSegmentsLocal[i], localAdapterNo, SCI_FLAG_DMA_SOURCE_ONLY, &error);
 		sisci_assert(error);
@@ -295,13 +263,13 @@ void init_local_encoded_data_segments() {
 
 		keyframe[i] = (int*) ((uint8_t*)buffer + keyframe_offset);
 
-		mb_Y[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetY);
-		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetU);
-		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsetV);
+		mb_Y[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[Y_COMPONENT]);
+		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[U_COMPONENT]);
+		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[V_COMPONENT]);
 
-		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsY_offset);
-		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsU_offset);
-		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsV_offset);
+		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
+		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
+		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
 	}
 }
 
@@ -409,18 +377,13 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t, sci_error_t statu
 }
 
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
-	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizeY);
-	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizeU);
-	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizeV);
+	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizes[Y_COMPONENT]);
+	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizes[U_COMPONENT]);
+	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizes[V_COMPONENT]);
 
-	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizeY);
-	memcpy(residuals_U[segNum], residuals->Udct, residualsSizeU);
-	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizeV);
-}
-
-void cuda_copy_to_segment(struct c63_common *cm, int segNum) {
-	cudaMemcpy(mb_Y[segNum], cm->curframe->mbs_gpu[Y_COMPONENT], mbSizeY+mbSizeU+mbSizeV, cudaMemcpyDeviceToHost);
-	cudaMemcpy(residuals_Y[segNum], cm->curframe->residuals_gpu->Ydct, residualsSizeY+residualsSizeU+residualsSizeV, cudaMemcpyDeviceToHost);
+	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizes[Y_COMPONENT]);
+	memcpy(residuals_U[segNum], residuals->Udct, residualsSizes[U_COMPONENT]);
+	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizes[V_COMPONENT]);
 }
 
 void transfer_encoded_data(int keyframe_val, int segNum)
@@ -439,14 +402,6 @@ void wait_for_image_transfer(int segNum) {
 	while(!transfer_completed[segNum]);
 	transfer_completed[segNum] = 0;
 }
-/*
-void wait_for_image_transfer(int segNum) {
-	sci_error_t error;
-
-	SCIWaitForDMAQueue(dmaQueues[segNum], SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-*/
 
 void signal_reader(int segNum)
 {

@@ -140,11 +140,10 @@ int main(int argc, char **argv) {
 	}
 
 	init_SISCI(localAdapterNo, encoderNodeId);
-
 	send_width_and_height(width, height);
-
 	init_segment_sizes();
 
+	// Initialize image segments
 	struct segment_yuv images[NUM_IMAGE_SEGMENTS];
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
@@ -170,17 +169,18 @@ int main(int argc, char **argv) {
 	int segNum = 0;
 
 	while (1) {
-
-		if (numframes >= NUM_IMAGE_SEGMENTS) {
-			// The encoder sends an interrupt when it is ready to receive the next frame
-			wait_for_encoder(segNum);
-		}
+		wait_for_image_transfer(segNum);
 
 		int rc = read_yuv(infile, images[segNum]);
 
 		if (!rc) {
 			// No more data
 			break;
+		}
+
+		if (numframes >= NUM_IMAGE_SEGMENTS) {
+			// The encoder sends an interrupt when it is ready to receive the next frame
+			wait_for_encoder(segNum);
 		}
 
 		// Copy new frame to remote segment

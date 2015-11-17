@@ -5,6 +5,8 @@
 // Local
 static unsigned int localAdapterNo;
 static unsigned int localNodeId;
+static unsigned int encoderNodeId;
+
 static sci_desc_t sds[NUM_IMAGE_SEGMENTS];
 static sci_dma_queue_t dmaQueues[NUM_IMAGE_SEGMENTS];
 static sci_local_segment_t localImageSegments[NUM_IMAGE_SEGMENTS];
@@ -14,10 +16,11 @@ static unsigned int imageSize;
 static int callback_arg[NUM_IMAGE_SEGMENTS];
 
 // Encoder
-static unsigned int encoderNodeId;
 static sci_local_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_data_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_segment_t remoteImageSegments[NUM_IMAGE_SEGMENTS];
+
+static volatile int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
 
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 {
@@ -169,6 +172,8 @@ sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_err
 		// Send interrupt to computation node signaling that the frame has been transferred
 		signal_encoder(IMAGE_TRANSFERRED, *(int*) arg);
 
+		transfer_completed[*(int*)arg] = 1;
+
 		retVal = SCI_CALLBACK_CONTINUE;
 	}
 	else {
@@ -191,10 +196,8 @@ void transfer_image_async(int segNum)
 
 void wait_for_image_transfer(int segNum)
 {
-	sci_error_t error;
-
-	SCIWaitForDMAQueue(dmaQueues[segNum], SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
+	while(!transfer_completed[segNum]);
+	transfer_completed[segNum] = 0;
 }
 
 void signal_encoder(encoder_signal signal, int segNum)

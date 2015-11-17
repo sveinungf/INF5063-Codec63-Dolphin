@@ -42,7 +42,7 @@ static pthread_mutex_t mutex_parent[COLOR_COMPONENTS];
 static pthread_mutex_t mutex_simd[COLOR_COMPONENTS];
 static pthread_cond_t cond_frame_received[COLOR_COMPONENTS];
 static pthread_cond_t cond_frame_encoded[COLOR_COMPONENTS];
-static bool thread_done = false;
+static volatile bool thread_done = false;
 
 template<int component>
 static inline void c63_encode_image_host()
@@ -248,13 +248,13 @@ int main(int argc, char **argv)
 	set_sizes_offsets(cm);
 
 	struct segment_yuv images_gpu[2];
-	images_gpu[0] = init_image_segment(cm, 0);
-	images_gpu[1] = init_image_segment(cm, 1);
-	init_remote_encoded_data_segment(0);
-	init_remote_encoded_data_segment(1);
+	int i;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		images_gpu[i] = init_image_segment(cm, i);
+		init_remote_encoded_data_segment(i);
+	}
 	init_local_encoded_data_segments();
 
-	//yuv_t* image_gpu = create_image_gpu(cm);
 	int segNum = 0;
 
 	pthread_t simd_threads[COLOR_COMPONENTS];
@@ -284,7 +284,6 @@ int main(int argc, char **argv)
 		}
 	}
 
-	int transferred = 0;
 	while (1)
 	{
 		// The reader sends an interrupt when it has transferred the next frame
@@ -341,19 +340,14 @@ int main(int argc, char **argv)
 		wait_for_image_transfer(segNum);
 
 		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
-		//cuda_copy_to_segment(cm, segNum);
 
 		if (numframes >= NUM_IMAGE_SEGMENTS) {
 			// The writer sends an interrupt when it is ready for the next frame
 			wait_for_writer(segNum);
-			//copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
-			--transferred;
 		}
 
 		// Copy data frame to remote segment - interrupt to writer handled by callback
-
 		transfer_encoded_data(cm->curframe->keyframe, segNum);
-		++transferred;
 
 		++cm->framenum;
 		++cm->frames_since_keyframe;

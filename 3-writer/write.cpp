@@ -15,7 +15,7 @@ using namespace std;
 
 
 int frequencies[2][12];
-static unsigned int bit_buffer = 0;
+static uint64_t bit_buffer = 0;
 static unsigned int bit_buffer_width = 0;
 
 static inline void put_byte(vector<uint8_t>& byte_vector, int byte)
@@ -29,6 +29,23 @@ static inline void put_bytes(vector<uint8_t>& byte_vector, const void* data, uns
 	for (unsigned int i = 0; i < len; ++i)
 	{
 		byte_vector.push_back(bytes[i]);
+	}
+}
+
+static inline void flush_bytes(vector<uint8_t>& byte_vector)
+{
+	while (bit_buffer_width >= 8)
+	{
+		uint8_t b = (uint8_t) (bit_buffer >> (bit_buffer_width - 8));
+
+		put_byte(byte_vector, b);
+
+		if (b == 0xff)
+		{
+			put_byte(byte_vector, 0);
+		}
+
+		bit_buffer_width -= 8;
 	}
 }
 
@@ -47,23 +64,14 @@ static inline void put_bits(vector<uint8_t>& byte_vector, uint16_t bits,
 		return;
 	}
 
+	if ((bit_buffer_width + n) >= 64)
+	{
+		flush_bytes(byte_vector);
+	}
+
 	bit_buffer <<= n;
 	bit_buffer |= bits & ((1 << n) - 1);
 	bit_buffer_width += n;
-
-	while (bit_buffer_width >= 8)
-	{
-		uint8_t b = (uint8_t) (bit_buffer >> (bit_buffer_width - 8));
-
-		put_byte(byte_vector, b);
-
-		if (b == 0xff)
-		{
-			put_byte(byte_vector, 0);
-		}
-
-		bit_buffer_width -= 8;
-	}
 }
 
 /**
@@ -71,6 +79,8 @@ static inline void put_bits(vector<uint8_t>& byte_vector, uint16_t bits,
  */
 static inline void flush_bits(vector<uint8_t>& byte_vector)
 {
+	flush_bytes(byte_vector);
+
 	if (bit_buffer > 0)
 	{
 		uint8_t b = bit_buffer << (8 - bit_buffer_width);

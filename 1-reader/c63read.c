@@ -60,6 +60,7 @@ static int read_yuv(FILE *file, struct segment_yuv image) {
 	return len;
 }
 
+
 static void init_segment_sizes() {
 	unsigned int ypw = (uint32_t) (ceil(width/16.0f)*16);
 	unsigned int yph = (uint32_t) (ceil(height/16.0f)*16);
@@ -87,6 +88,7 @@ static void print_help() {
 
 	exit(EXIT_FAILURE);
 }
+
 
 void interrupt_handler(int signal)
 {
@@ -187,7 +189,9 @@ int main(int argc, char **argv) {
 		printf("Sending frame %d to encoder... ", numframes);
 		fflush(stdout);
 
-		// Start DMA transfer with interrupt to encoder handled by callback
+		/* Transfer the new image asynchronously by using DMA
+		 * Notification to encoder is handled by a callback
+		 */
 		transfer_image_async(segNum);
 
 		++numframes;
@@ -200,7 +204,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	// Signal computation node that there are no more frames to be encoded
+	// Signal encoder that there are no more frames to be encoded
 	wait_for_encoder(segNum^1);
 	signal_encoder(NO_MORE_FRAMES, segNum);
 

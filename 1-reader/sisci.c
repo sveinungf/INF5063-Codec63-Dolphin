@@ -22,6 +22,10 @@ static sci_remote_segment_t remoteImageSegments[NUM_IMAGE_SEGMENTS];
 
 static volatile int transfer_completed[NUM_IMAGE_SEGMENTS] = {1, 1};
 
+
+/*
+ * Initializes the needed descriptors, interrupts and DMA queues
+ */
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 {
 	localAdapterNo = localAdapter;
@@ -54,7 +58,7 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 	}
 
 	// Interrupts to the encoder
-	printf("Connecting to interrupts on encoder... \n");
+	printf("Connecting to interrupts on encoder...");
 	fflush(stdout);
 
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
@@ -68,6 +72,30 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode)
 	printf("Done!\n");
 }
 
+
+/*
+ * Cleans up the SISCI segments and maps used
+ */
+void cleanup_segments()
+{
+	sci_error_t error;
+
+	int i;
+	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
+		SCIDisconnectSegment(remoteImageSegments[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
+		SCIUnmapSegment(localImageMaps[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+
+		SCIRemoveSegment(localImageSegments[i], SCI_NO_FLAGS, &error);
+		sisci_check(error);
+	}
+}
+
+/*
+ * Disconnects SISCI interrupts and closes descriptors
+ */
 void cleanup_SISCI()
 {
 	sci_error_t error;
@@ -91,6 +119,10 @@ void cleanup_SISCI()
 	SCITerminate();
 }
 
+
+/*
+ * Initializes a SISCI segment used to contain and transfer an image segment
+ */
 struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, unsigned int sizeV, int segNum)
 {
 	sci_error_t error;
@@ -128,23 +160,10 @@ struct segment_yuv init_image_segment(unsigned int sizeY, unsigned int sizeU, un
 	return image;
 }
 
-void cleanup_segments()
-{
-	sci_error_t error;
 
-	int i;
-	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
-		SCIDisconnectSegment(remoteImageSegments[i], SCI_NO_FLAGS, &error);
-		sisci_check(error);
-
-		SCIUnmapSegment(localImageMaps[i], SCI_NO_FLAGS, &error);
-		sisci_check(error);
-
-		SCIRemoveSegment(localImageSegments[i], SCI_NO_FLAGS, &error);
-		sisci_check(error);
-	}
-}
-
+/*
+ * Sends the width and the height of the video file to the encoder using an interrupt
+ */
 void send_width_and_height(uint32_t width, uint32_t height)
 {
 	sci_error_t error;
@@ -155,51 +174,11 @@ void send_width_and_height(uint32_t width, uint32_t height)
 	sisci_assert(error);
 }
 
-void wait_for_encoder(int segNum)
-{
-	sci_error_t error;
 
-	SCIWaitForInterrupt(interruptsFromEncoder[segNum], SCI_INFINITE_TIMEOUT,
-				SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-
-sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
-	sci_callback_action_t retVal;
-	if (status == SCI_ERR_OK) {
-		printf("Done!\n");
-
-		// Send interrupt to computation node signaling that the frame has been transferred
-		signal_encoder(IMAGE_TRANSFERRED, *(int*) arg);
-
-		transfer_completed[*(int*)arg] = 1;
-
-		retVal = SCI_CALLBACK_CONTINUE;
-	}
-	else {
-		retVal = SCI_CALLBACK_CANCEL;
-		sisci_check(status);
-	}
-
-	return retVal;
-}
-
-void transfer_image_async(int segNum)
-{
-	sci_error_t error;
-
-	callback_arg[segNum] = segNum;
-
-	SCIStartDmaTransfer(dmaQueues[segNum], localImageSegments[segNum], remoteImageSegments[segNum], 0, imageSize, 0, dma_callback, &callback_arg[segNum], SCI_FLAG_USE_CALLBACK, &error);
-	sisci_assert(error);
-}
-
-void wait_for_image_transfer(int segNum)
-{
-	while(!transfer_completed[segNum]);
-	transfer_completed[segNum] = 0;
-}
-
+/*
+ * Signals the encoder that a new image has been transferred
+ * in the segment corresponding to "segNum"
+ */
 void signal_encoder(encoder_signal signal, int segNum)
 {
 	sci_error_t error;
@@ -216,5 +195,67 @@ void signal_encoder(encoder_signal signal, int segNum)
 	}
 
 	SCITriggerDataInterrupt(interruptsToEncoder[segNum], (void*) &data, sizeof(uint8_t), SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+}
+
+/*
+ * Waits until the encoder is done processing the data in a segment
+ */
+void wait_for_encoder(int segNum)
+{
+	sci_error_t error;
+
+	SCIWaitForInterrupt(interruptsFromEncoder[segNum], SCI_INFINITE_TIMEOUT,
+				SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+}
+
+
+/*
+ * Used to wait for the completion of an image transfer in a segment
+ * corresponding to "segNum"
+ */
+void wait_for_image_transfer(int segNum)
+{
+	while(!transfer_completed[segNum]);
+	transfer_completed[segNum] = 0;
+}
+
+
+/*
+ * Callback function used to signal the encoder that a new image has been sent
+ */
+static sci_callback_action_t dma_callback(void *arg, sci_dma_queue_t dma_queue, sci_error_t status) {
+	sci_callback_action_t retVal;
+	if (status == SCI_ERR_OK) {
+		printf("Done!\n");
+
+		// Send interrupt to encoder signaling that the frame has been transferred
+		signal_encoder(IMAGE_TRANSFERRED, *(int*) arg);
+
+		transfer_completed[*(int*)arg] = 1;
+
+		retVal = SCI_CALLBACK_CONTINUE;
+	}
+	else {
+		retVal = SCI_CALLBACK_CANCEL;
+		sisci_check(status);
+	}
+
+	return retVal;
+}
+
+/*
+ * Transfer image asynchronously to encoder
+ * The segment, DMA queue and the interrupt to be used in the callback, is
+ * decided by the "segNum" variable
+ */
+void transfer_image_async(int segNum)
+{
+	sci_error_t error;
+
+	callback_arg[segNum] = segNum;
+
+	SCIStartDmaTransfer(dmaQueues[segNum], localImageSegments[segNum], remoteImageSegments[segNum], 0, imageSize, 0, dma_callback, &callback_arg[segNum], SCI_FLAG_USE_CALLBACK, &error);
 	sisci_assert(error);
 }

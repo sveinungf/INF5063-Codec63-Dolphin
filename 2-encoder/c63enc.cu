@@ -301,10 +301,8 @@ int main(int argc, char **argv)
 			printf("\rNo more frames from reader\n");
 
 			wait_for_writer(segNum^1);
-			wait_for_writer(segNum);
 
 			// Send interrupt to writer signaling that encoding has been finished
-			signal_writer(ENCODING_FINISHED, segNum^1);
 			signal_writer(ENCODING_FINISHED, segNum);
 			break;
 		}
@@ -338,8 +336,8 @@ int main(int argc, char **argv)
 		printf(", encoded");
 		fflush(stdout);
 
+		// Wait for the previous segment transfer to complete
 		wait_for_image_transfer(segNum);
-
 		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
 
 		if (numframes >= NUM_IMAGE_SEGMENTS) {
@@ -347,7 +345,7 @@ int main(int argc, char **argv)
 			wait_for_writer(segNum);
 		}
 
-		// Copy data frame to remote segment - interrupt to writer handled by callback
+		// Transfer data to writer - interrupt to writer handled by callback
 		transfer_encoded_data(cm->curframe->keyframe, segNum);
 		printf(", sent!\n");
 
@@ -382,7 +380,6 @@ int main(int argc, char **argv)
 	cleanup_segments();
 	cleanup_SISCI();
 
-	cudaDeviceReset();
 
 	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
 		if (!ON_GPU(c)) {

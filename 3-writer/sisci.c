@@ -19,6 +19,9 @@ static sci_local_data_interrupt_t interruptsFromEncoder[NUM_IMAGE_SEGMENTS];
 static sci_remote_interrupt_t interruptsToEncoder[NUM_IMAGE_SEGMENTS];
 
 
+/*
+ * Initializes SISCI descriptors and interrupts
+ */
 void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 	localAdapterNo = localAdapter;
 	encoderNodeId = encoderNode;
@@ -59,8 +62,13 @@ void init_SISCI(unsigned int localAdapter, unsigned int encoderNode) {
 }
 
 
+/*
+ * Used to receive the dimensions of the video file from the encoder
+ */
 void receive_width_and_height(uint32_t *width, uint32_t *height) {
-	printf("Waiting for width and height from encoder...\n");
+	printf("Waiting for width and height from encoder...");
+	fflush(stdout);
+
 	uint32_t widthAndHeight[2];
 	unsigned int length = 2*sizeof(uint32_t);
 
@@ -71,9 +79,13 @@ void receive_width_and_height(uint32_t *width, uint32_t *height) {
 	*width = widthAndHeight[0];
 	*height = widthAndHeight[1];
 
-	printf("Done\n");
+	printf("Done!\n");
 }
 
+/*
+ * Initialises a local SISCI segment which is used for
+ * data transfer between the encoder and the writer
+ */
 uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	sci_error_t error;
 
@@ -100,12 +112,9 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 	return local_buffer;
 }
 
-void wait_for_encoder(uint8_t *done, unsigned int *length, int segNum) {
-	sci_error_t error;
-	SCIWaitForDataInterrupt(interruptsFromEncoder[segNum], done, length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
-	sisci_assert(error);
-}
-
+/*
+ * Signals the encoder that the writer is ready for more data
+ */
 void signal_encoder(int segNum) {
 	sci_error_t error;
 
@@ -113,6 +122,18 @@ void signal_encoder(int segNum) {
 	sisci_assert(error);
 }
 
+/*
+ * Used to wait for the transfer of new data from the encoder
+ */
+void wait_for_encoder(uint8_t *done, unsigned int *length, int segNum) {
+	sci_error_t error;
+	SCIWaitForDataInterrupt(interruptsFromEncoder[segNum], done, length, SCI_INFINITE_TIMEOUT, SCI_NO_FLAGS, &error);
+	sisci_assert(error);
+}
+
+/*
+ * Cleans up initialized SISCI variables
+ */
 void cleanup_SISCI() {
 	sci_error_t error;
 

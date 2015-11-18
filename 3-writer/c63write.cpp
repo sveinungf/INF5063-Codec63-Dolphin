@@ -31,15 +31,15 @@ static volatile uint8_t *local_buffers[NUM_IMAGE_SEGMENTS];
 static uint32_t keyframe_offset;
 
 static char *output_file;
-FILE *outfile;
+static FILE *outfile;
 
 static uint32_t width;
 static uint32_t height;
 
-pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-int thread_done = 0;
-int fd;
+static pthread_mutex_t flush_mut = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t flush_cond = PTHREAD_COND_INITIALIZER;
+static int thread_done = 0;
+static int fd;
 
 /* getopt */
 extern char *optarg;
@@ -87,19 +87,19 @@ struct c63_common* init_c63_enc()
 	return cm;
 }
 
-static void set_offsets_and_pointers(struct c63_common *cm, int segNum)
+/*
+ * Sets pointers in a c63_common struct to point into SISCI segments
+ */
+static void set_pointers(struct c63_common *cm, int segNum)
 {
 	// Set offsets within segment
 	keyframe_offset = 0;
 
 	uint32_t mb_offset_Y = keyframe_offset + sizeof(int);
-	uint32_t mb_offset_U = mb_offset_Y
-			+ cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
-	uint32_t mb_offset_V = mb_offset_U
-			+ cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
+	uint32_t mb_offset_U = mb_offset_Y + cm->mb_rows[Y] * cm->mb_cols[Y] * sizeof(struct macroblock);
+	uint32_t mb_offset_V = mb_offset_U + cm->mb_rows[U] * cm->mb_cols[U] * sizeof(struct macroblock);
 
-	uint32_t residuals_offset_Y = mb_offset_V
-			+ cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
+	uint32_t residuals_offset_Y = mb_offset_V + cm->mb_rows[V] * cm->mb_cols[V] * sizeof(struct macroblock);
 	uint32_t residuals_offset_U = residuals_offset_Y + cm->ypw * cm->yph * sizeof(int16_t);
 	uint32_t residuals_offset_V = residuals_offset_U + cm->upw * cm->uph * sizeof(int16_t);
 
@@ -114,15 +114,19 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum)
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
+
+/*
+ * Function used by a dedicated thread to flush the file buffer
+ */
 static void *flush(void*)
 {
-	pthread_mutex_lock(&mut);
+	pthread_mutex_lock(&flush_mut);
 	while (thread_done == 0)
 	{
-		pthread_cond_wait(&cond, &mut);
+		pthread_cond_wait(&flush_cond, &flush_mut);
 		fsync(fd);
 	}
-	pthread_mutex_unlock(&mut);
+	pthread_mutex_unlock(&flush_mut);
 	return NULL;
 }
 
@@ -137,6 +141,7 @@ static void print_help()
 
 	exit(EXIT_FAILURE);
 }
+
 
 void interrupt_handler(int)
 {
@@ -207,7 +212,7 @@ int main(int argc, char **argv)
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 		local_buffers[i] = init_local_segment(localSegmentSize, i);
-		set_offsets_and_pointers(cms[i], i);
+		set_pointers(cms[i], i);
 	}
 
 	/* Encode input frames */
@@ -221,6 +226,8 @@ int main(int argc, char **argv)
 	pthread_create(&child, NULL, flush, NULL);
 
 	int segNum = 0;
+
+	vector<uint8_t> byte_vector;
 
 	while (1)
 	{
@@ -241,15 +248,18 @@ int main(int argc, char **argv)
 		}
 
 		cms[segNum]->curframe->keyframe = ((int*) local_buffers[segNum])[keyframe_offset];
-
-		vector<uint8_t> byte_vector = write_frame_to_buffer(cms[segNum]);
-		write_buffer_to_file(byte_vector, outfile);
+		write_frame_to_buffer(cms[segNum], byte_vector);
 
 		// Signal encoder that writer is ready for a new frame
 		signal_encoder(segNum);
 
-		// Flush
-		pthread_cond_signal(&cond);
+		write_buffer_to_file(byte_vector, outfile);
+
+		byte_vector.clear();
+
+
+		// Flush - lock is not taken since fsync is not critical
+		pthread_cond_signal(&flush_cond);
 
 		printf(", written\n");
 		++numframes;
@@ -257,10 +267,14 @@ int main(int argc, char **argv)
 		segNum ^= 1;
 	}
 
-	pthread_mutex_lock(&mut);
+	pthread_mutex_lock(&flush_mut);
 	thread_done = 1;
-	pthread_cond_signal(&cond);
-	pthread_mutex_unlock(&mut);
+	pthread_cond_signal(&flush_cond);
+	pthread_mutex_unlock(&flush_mut);
+
+	pthread_join(child, NULL);
+	pthread_cond_destroy(&flush_cond);
+	pthread_mutex_destroy(&flush_mut);
 
 	cleanup_SISCI();
 

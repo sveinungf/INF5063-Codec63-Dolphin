@@ -49,9 +49,13 @@ static int *keyframe[NUM_IMAGE_SEGMENTS];
 static struct macroblock *mb_Y[NUM_IMAGE_SEGMENTS];
 static struct macroblock *mb_U[NUM_IMAGE_SEGMENTS];
 static struct macroblock *mb_V[NUM_IMAGE_SEGMENTS];
-static dct_t *residuals_Y[NUM_IMAGE_SEGMENTS];
-static dct_t *residuals_U[NUM_IMAGE_SEGMENTS];
-static dct_t *residuals_V[NUM_IMAGE_SEGMENTS];
+static int16_t *residuals_Y[NUM_IMAGE_SEGMENTS];
+static int16_t *residuals_U[NUM_IMAGE_SEGMENTS];
+static int16_t *residuals_V[NUM_IMAGE_SEGMENTS];
+
+static struct macroblock *remote_mbY[NUM_IMAGE_SEGMENTS];
+static dct_t *remote_residuals_Y[NUM_IMAGE_SEGMENTS];
+static sci_map_t remote_maps[NUM_IMAGE_SEGMENTS];
 
 
 /*
@@ -213,7 +217,7 @@ struct segment_yuv init_image_segment(struct c63_common* cm, int segNum)
 	}
 
 	sci_error_t error;
-	SCICreateSegment(reader_sds[segNum], &imageSegments[segNum], localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY, &error);
+	SCICreateSegment(reader_sds[segNum], &imageSegments[segNum], localSegmentId, segmentSize, SCI_NO_CALLBACK, NULL, SCI_FLAG_EMPTY | SCI_FLAG_DMA_GLOBAL, &error);
 	sisci_assert(error);
 
 	/*
@@ -263,15 +267,20 @@ void init_remote_encoded_data_segment(int segNum)
 
 	// Get segment size
 	segmentSizeWriter = SCIGetRemoteSegmentSize(encodedDataSegmentsWriter[segNum]);
+
 }
 
 /*
  * Initializes the local SISCI segments on the encoder
  */
-void init_local_encoded_data_segments() {
+void init_local_encoded_data_segments(struct c63_common *cm) {
 	sci_error_t error;
 	uint32_t localSegmentId;
 	void *buffer;
+
+	struct frame *frames[NUM_IMAGE_SEGMENTS];
+	frames[0] = cm->refframe;
+	frames[1] = cm->curframe;
 
 	int i;
 	for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
@@ -292,9 +301,18 @@ void init_local_encoded_data_segments() {
 		mb_U[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[U_COMPONENT]);
 		mb_V[i] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[V_COMPONENT]);
 
-		residuals_Y[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
-		residuals_U[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
-		residuals_V[i] = (dct_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
+		free(frames[i]->mbs[U_COMPONENT]);
+		free(frames[i]->mbs[V_COMPONENT]);
+		free(frames[i]->residuals->Udct);
+		free(frames[i]->residuals->Vdct);
+		frames[i]->mbs[U_COMPONENT] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[U_COMPONENT]);
+		frames[i]->mbs[V_COMPONENT] = (struct macroblock*) ((uint8_t*) buffer + mbOffsets[V_COMPONENT]);
+		frames[i]->residuals->Udct = (int16_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
+		frames[i]->residuals->Vdct = (int16_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
+
+		residuals_Y[i] = (int16_t*) ((uint8_t*) buffer + residualsOffsets[Y_COMPONENT]);
+		residuals_U[i] = (int16_t*) ((uint8_t*) buffer + residualsOffsets[U_COMPONENT]);
+		residuals_V[i] = (int16_t*) ((uint8_t*) buffer + residualsOffsets[V_COMPONENT]);
 	}
 }
 
@@ -388,12 +406,12 @@ void wait_for_image_transfer(int segNum) {
  */
 void copy_to_segment(struct macroblock **mbs, dct_t* residuals, int segNum) {
 	memcpy(mb_Y[segNum], mbs[Y_COMPONENT], mbSizes[Y_COMPONENT]);
-	memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizes[U_COMPONENT]);
-	memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizes[V_COMPONENT]);
+	//memcpy(mb_U[segNum], mbs[U_COMPONENT], mbSizes[U_COMPONENT]);
+	//memcpy(mb_V[segNum], mbs[V_COMPONENT], mbSizes[V_COMPONENT]);
 
 	memcpy(residuals_Y[segNum], residuals->Ydct, residualsSizes[Y_COMPONENT]);
-	memcpy(residuals_U[segNum], residuals->Udct, residualsSizes[U_COMPONENT]);
-	memcpy(residuals_V[segNum], residuals->Vdct, residualsSizes[V_COMPONENT]);
+	//memcpy(residuals_U[segNum], residuals->Udct, residualsSizes[U_COMPONENT]);
+	//memcpy(residuals_V[segNum], residuals->Vdct, residualsSizes[V_COMPONENT]);
 }
 
 

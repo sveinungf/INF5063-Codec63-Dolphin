@@ -108,9 +108,9 @@ static struct frame* create_frame(struct c63_common *cm, const struct c63_cuda& 
 
 			cudaMallocHost((void**) residuals[c], res_size);
 		} else {
-			f->mbs[c] = (struct macroblock*) calloc(mb_num, sizeof(struct macroblock));
+			//f->mbs[c] = (struct macroblock*) calloc(mb_num, sizeof(struct macroblock));
 
-			*residuals[c] = (int16_t*) malloc(res_size);
+			//*residuals[c] = (int16_t*) malloc(res_size);
 		}
 	}
 
@@ -135,8 +135,8 @@ static void destroy_frame(struct frame *f)
 			cudaFreeHost(f->mbs[c]);
 			cudaFreeHost(residuals[c]);
 		} else {
-			free(f->mbs[c]);
-			free(residuals[c]);
+			//free(f->mbs[c]);
+			//free(residuals[c]);
 		}
 	}
 

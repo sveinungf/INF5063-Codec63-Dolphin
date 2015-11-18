@@ -252,7 +252,7 @@ int main(int argc, char **argv)
 		images_gpu[i] = init_image_segment(cm, i);
 		init_remote_encoded_data_segment(i);
 	}
-	init_local_encoded_data_segments();
+	init_local_encoded_data_segments(cm);
 
 	int segNum = 0;
 
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
 			cond_frame_encoded[c] = PTHREAD_COND_INITIALIZER;
 		}
 	}
-
+	wait_for_image_transfer(segNum);
 #if !(Y_ON_GPU)
 	pthread_create(&simd_threads[Y], nullptr, thread_c63_encode_image_host<Y>, nullptr);
 #endif
@@ -307,7 +307,6 @@ int main(int argc, char **argv)
 			break;
 		}
 
-
 		c63_encode_image(cm_gpu, &images_gpu[segNum]);
 
 
@@ -337,7 +336,7 @@ int main(int argc, char **argv)
 		fflush(stdout);
 
 		// Wait for the previous segment transfer to complete
-		wait_for_image_transfer(segNum);
+		//wait_for_image_transfer(segNum);
 		copy_to_segment(cm->curframe->mbs, cm->curframe->residuals, segNum);
 
 		if (numframes >= NUM_IMAGE_SEGMENTS) {

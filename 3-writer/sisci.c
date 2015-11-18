@@ -86,7 +86,7 @@ uint8_t *init_local_segment(uint32_t localSegmentSize, int segNum) {
 
 	// Map the local segment
 	int offset = 0;
-	uint8_t *local_buffer = SCIMapLocalSegment(localSegments[segNum] , &localMaps[segNum], offset, localSegmentSize, NULL, SCI_NO_FLAGS, &error);
+	uint8_t *local_buffer = SCIMapLocalSegment(localSegments[segNum] , &localMaps[segNum], offset, localSegmentSize, NULL, SCI_FLAG_READONLY_MAP, &error);
 	sisci_assert(error);
 
 	// Make segment accessible from the network adapter

@@ -10,21 +10,21 @@ Building
 Running
 ~~~~~~~
   1. The reader can be started with "make read" and has the following optional arguments:
-        LOCAL_ADAPTER_NO - The local adapter number
-        NODE_ID_ENCODER  - The SISCI node ID of the encoder
-        VIDEO            - One of the following integrals:
+        LOCAL_ADAPTER_NO - The local adapter number (defaults to 0)
+        NODE_ID_ENCODER  - The SISCI node ID of the encoder (defaults to 28)
+        VIDEO            - One of the following integrals: (defaults to 0)
                               0 - foreman.yuv
                               1 - foreman_4k.yuv
                               2 - tractor.yuv
                               3 - bagadus.yuv
 
   2. The encoder can be started with "make encode" and has the following optional arguments:
-        LOCAL_ADAPTER_NO - The local adapter number
-        NODE_ID_READER   - The SISCI node ID of the reader
-        NODE_ID_WRITER   - The SISCI node ID of the writer
+        LOCAL_ADAPTER_NO - The local adapter number (defaults to 0)
+        NODE_ID_READER   - The SISCI node ID of the reader (defaults to 4)
+        NODE_ID_WRITER   - The SISCI node ID of the writer (defaults to 8)
   
   3. The writer can be started with "make write" and has the following optional arguments:
-        LOCAL_ADAPTER_NO - The local adapter number
-        NODE_ID_ENCODER  - The SISCI node ID of the encoder
+        LOCAL_ADAPTER_NO - The local adapter number (defaults to 0)
+        NODE_ID_ENCODER  - The SISCI node ID of the encoder (defaults to 28)
 
   4. The writer stores the encoded file in the temp directory

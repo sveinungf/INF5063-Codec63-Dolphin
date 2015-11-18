@@ -42,9 +42,13 @@ static uint32_t width;
 static uint32_t height;
 
 static volatile int threads_writing[NUM_IMAGE_SEGMENTS] = {0, 0};
+static volatile int thread_done;
 
 static pthread_mutex_t write_mut = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t write_cond = PTHREAD_COND_INITIALIZER;
+
+static pthread_mutex_t flush_mut = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t flush_cond = PTHREAD_COND_INITIALIZER;
 
 static pthread_mutex_t thread_muts[NUM_IMAGE_SEGMENTS] = {PTHREAD_MUTEX_INITIALIZER, PTHREAD_MUTEX_INITIALIZER};
 static pthread_cond_t thread_conds[NUM_IMAGE_SEGMENTS] = {PTHREAD_COND_INITIALIZER, PTHREAD_COND_INITIALIZER};
@@ -125,6 +129,18 @@ static void set_offsets_and_pointers(struct c63_common *cm, int segNum) {
 	cm->curframe->residuals->Vdct = (int16_t*) (local_buffers[segNum] + residuals_offset_V);
 }
 
+static void *flush(void*)
+{
+	pthread_mutex_lock(&flush_mut);
+	while (thread_done == 0)
+	{
+		pthread_cond_wait(&flush_cond, &flush_mut);
+		fsync(fd);
+	}
+	pthread_mutex_unlock(&flush_mut);
+	return NULL;
+}
+
 static void *segment_handler(void *arg) {
 	int threadNum = *(int*)arg;
 	pthread_mutex_lock(&thread_muts[threadNum]);
@@ -151,8 +167,7 @@ static void *segment_handler(void *arg) {
 		while(next_to_write != threadNum) {
 			pthread_cond_wait(&write_cond, &write_mut);
 		}
-		write_buffer_to_file(byte_vectors[threadNum], cms[threadNum]->e_ctx.fp);
-
+		write_buffer_to_file(byte_vectors[threadNum], outfile);
 
 		next_to_write = threadNum^1;
 
@@ -250,7 +265,6 @@ int main(int argc, char **argv)
   int i;
   for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {
 	  cms[i] = init_c63_enc();
-	  cms[i]->e_ctx.fp = outfile;
   }
 
   uint32_t localSegmentSize = sizeof(int);
@@ -272,11 +286,13 @@ int main(int argc, char **argv)
   uint8_t done = 0;
   unsigned int length = sizeof(uint8_t);
 
+  pthread_t child;
+  pthread_create(&child, NULL, flush, NULL);
+
   while (1)
   {
   	  printf("Frame %d:", frameNum);
   	  fflush(stdout);
-  	  fsync(fd);
 
   	  wait_for_encoder(&done, &length, segNum);
 
@@ -298,6 +314,8 @@ int main(int argc, char **argv)
 	  }
 	  pthread_cond_signal(&thread_conds[segNum]);
 	  pthread_mutex_unlock(&thread_muts[segNum]);
+
+	  pthread_cond_signal(&flush_cond);
 
 
 	  ++frameNum;
@@ -321,6 +339,14 @@ int main(int argc, char **argv)
   pthread_mutex_destroy(&write_mut);
   pthread_cond_destroy(&write_cond);
 
+  pthread_mutex_lock(&flush_mut);
+  thread_done = 1;
+  pthread_cond_signal(&flush_cond);
+  pthread_mutex_unlock(&flush_mut);
+
+  pthread_join(child, NULL);
+  pthread_cond_destroy(&flush_cond);
+  pthread_mutex_destroy(&flush_mut);
 
   cleanup_SISCI();
   for (i = 0; i < NUM_IMAGE_SEGMENTS; ++i) {

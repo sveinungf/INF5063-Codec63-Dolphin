@@ -8,7 +8,7 @@ FRAMES ?= 0
 NODE_ID_ENCODER ?= 28
 LOCAL_ADAPTER_NO ?= 0
 
-CCFLAGS = -Wall -malign-double
+CCFLAGS = -Wall
 LDFLAGS = -lm
 
 ifeq ($(DEBUG),1)
@@ -18,7 +18,7 @@ else
 endif
 
 ### SISCI ###
-DIS_SRC = /home/inf5063-g03/exam3/DIS/src
+DIS_SRC ?= /home/inf5063-g03/exam3/DIS/src
 
 INCLUDE_PATHS = $(DIS_SRC)/include/dis
 INCLUDE_PATHS += $(DIS_SRC)/SISCI/api
@@ -45,6 +45,10 @@ else ifeq ($(VIDEO),2)
 	WIDTH = 1920
 	HEIGHT = 1080
 	INPUT_VIDEO = /opt/cipr/tractor.yuv
+else ifeq ($(VIDEO),3)
+	WIDTH = 4096
+	HEIGHT = 1680
+	INPUT_VIDEO = /opt/cipr/bagadus.yuv
 endif
 
 all: c63read

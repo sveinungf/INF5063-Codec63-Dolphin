@@ -1,25 +1,31 @@
 #include "init_cuda.h"
 
 
-static const int Y = Y_COMPONENT;
-static const int U = U_COMPONENT;
-static const int V = V_COMPONENT;
-
 static yuv_t* create_image_gpu(struct c63_common *cm)
 {
 	yuv_t* image = (yuv_t*) malloc(sizeof(yuv_t));
-	cudaMalloc((void**) &image->Y, cm->ypw * cm->yph * sizeof(uint8_t));
-	cudaMalloc((void**) &image->U, cm->upw * cm->uph * sizeof(uint8_t));
-	cudaMalloc((void**) &image->V, cm->vpw * cm->vph * sizeof(uint8_t));
+	uint8_t** components[COLOR_COMPONENTS] = { &image->Y, &image->U, &image->V };
+
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (ON_GPU(c)) {
+			size_t size = cm->padw[c] * cm->padh[c] * sizeof(uint8_t);
+			cudaMalloc((void**) components[c], size);
+		}
+	}
 
 	return image;
 }
 
 static void destroy_image_gpu(yuv_t* image)
 {
-	cudaFree(image->Y);
-	cudaFree(image->U);
-	cudaFree(image->V);
+	uint8_t* components[COLOR_COMPONENTS] = { image->Y, image->U, image->V };
+
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (ON_GPU(c)) {
+			cudaFree(components[c]);
+		}
+	}
+
 	free(image);
 }
 
@@ -29,16 +35,19 @@ void init_frame_gpu(struct c63_common* cm, struct frame* f)
 	f->predicted_gpu = create_image_gpu(cm);
 
 	f->residuals_gpu = (dct_t*) malloc(sizeof(dct_t));
-	cudaMalloc((void**) &f->residuals_gpu->Ydct, cm->ypw * cm->yph * sizeof(int16_t));
-	cudaMalloc((void**) &f->residuals_gpu->Udct, cm->upw * cm->uph * sizeof(int16_t));
-	cudaMalloc((void**) &f->residuals_gpu->Vdct, cm->vpw * cm->vph * sizeof(int16_t));
 
-	cudaMalloc((void**) &f->mbs_gpu[Y], cm->mb_rows[Y] * cm->mb_cols[Y] *
-			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[U], cm->mb_rows[U] * cm->mb_cols[U] *
-			sizeof(struct macroblock));
-	cudaMalloc((void**) &f->mbs_gpu[V], cm->mb_rows[V] * cm->mb_cols[V] *
-			sizeof(struct macroblock));
+	dct_t* dct = f->residuals_gpu;
+	int16_t** residuals[COLOR_COMPONENTS] = { &dct->Ydct, &dct->Udct, &dct->Vdct };
+
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (ON_GPU(c)) {
+			size_t res_size = cm->padw[c] * cm->padh[c] * sizeof(int16_t);
+			size_t mb_size = cm->mb_rows[c] * cm->mb_cols[c] * sizeof(struct macroblock);
+
+			cudaMalloc((void**) residuals[c], res_size);
+			cudaMalloc((void**) &f->mbs_gpu[c], mb_size);
+		}
+	}
 }
 
 void deinit_frame_gpu(struct frame* f)
@@ -46,27 +55,33 @@ void deinit_frame_gpu(struct frame* f)
 	destroy_image_gpu(f->recons_gpu);
 	destroy_image_gpu(f->predicted_gpu);
 
-	cudaFree(f->residuals_gpu->Ydct);
-	cudaFree(f->residuals_gpu->Udct);
-	cudaFree(f->residuals_gpu->Vdct);
-	free(f->residuals_gpu);
+	dct_t* dct = f->residuals_gpu;
+	int16_t* residuals[COLOR_COMPONENTS] = { dct->Ydct, dct->Udct, dct->Vdct };
 
-	cudaFree(f->mbs_gpu[Y_COMPONENT]);
-	cudaFree(f->mbs_gpu[U_COMPONENT]);
-	cudaFree(f->mbs_gpu[V_COMPONENT]);
+	for (int c = 0; c < COLOR_COMPONENTS; ++c) {
+		if (ON_GPU(c)) {
+			cudaFree(residuals[c]);
+			cudaFree(f->mbs_gpu[c]);
+		}
+	}
+
+	free(f->residuals_gpu);
 }
 
 struct c63_cuda init_c63_cuda()
 {
 	struct c63_cuda result;
 
-	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
-		cudaStreamCreate(&result.stream[i]);
-		cudaStreamCreate(&result.memcpy_stream[i]);
+		cudaStreamCreate(&result.memcpy_stream[c]);
 
-		cudaEventCreate(&result.me_done[i]);
-		cudaEventCreate(&result.dctquant_done[i]);
+		if (ON_GPU(c)) {
+			cudaStreamCreate(&result.stream[c]);
+
+			cudaEventCreate(&result.me_done[c]);
+			cudaEventCreate(&result.dctquant_done[c]);
+		}
 	}
 
 	return result;
@@ -74,13 +89,16 @@ struct c63_cuda init_c63_cuda()
 
 void cleanup_c63_cuda(struct c63_cuda& c63_cuda)
 {
-	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
-		cudaStreamDestroy(c63_cuda.stream[i]);
-		cudaStreamDestroy(c63_cuda.memcpy_stream[i]);
+		cudaStreamDestroy(c63_cuda.memcpy_stream[c]);
 
-		cudaEventDestroy(c63_cuda.me_done[i]);
-		cudaEventDestroy(c63_cuda.dctquant_done[i]);
+		if (ON_GPU(c)) {
+			cudaStreamDestroy(c63_cuda.stream[c]);
+
+			cudaEventDestroy(c63_cuda.me_done[c]);
+			cudaEventDestroy(c63_cuda.dctquant_done[c]);
+		}
 	}
 }
 
@@ -118,15 +136,17 @@ struct c63_common_gpu init_c63_gpu(const struct c63_common* cm, const struct c63
 {
 	struct c63_common_gpu result;
 
-	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
-		int cols = cm->mb_cols[i];
-		int rows = cm->mb_rows[i];
-		const struct boundaries& boundaries = cm->me_boundaries[i];
-		cudaStream_t stream = c63_cuda.stream[i];
+		if (ON_GPU(c)) {
+			int cols = cm->mb_cols[c];
+			int rows = cm->mb_rows[c];
+			const struct boundaries& boundaries = cm->me_boundaries[c];
+			cudaStream_t stream = c63_cuda.stream[c];
 
-		result.me_boundaries[i] = init_me_boundaries_gpu(boundaries, cols, rows, stream);
-		cudaMalloc(&result.sad_index_results[i], cols * rows * sizeof(unsigned int));
+			result.me_boundaries[c] = init_me_boundaries_gpu(boundaries, cols, rows, stream);
+			cudaMalloc(&result.sad_index_results[c], cols * rows * sizeof(unsigned int));
+		}
 	}
 
 	return result;
@@ -134,9 +154,11 @@ struct c63_common_gpu init_c63_gpu(const struct c63_common* cm, const struct c63
 
 void cleanup_c63_gpu(struct c63_common_gpu& cm_gpu)
 {
-	for (int i = 0; i < COLOR_COMPONENTS; ++i)
+	for (int c = 0; c < COLOR_COMPONENTS; ++c)
 	{
-		cleanup_me_boundaries_gpu(cm_gpu.me_boundaries[i]);
-		cudaFree(cm_gpu.sad_index_results[i]);
+		if (ON_GPU(c)) {
+			cleanup_me_boundaries_gpu(cm_gpu.me_boundaries[c]);
+			cudaFree(cm_gpu.sad_index_results[c]);
+		}
 	}
 }

@@ -10,7 +10,7 @@ NODE_ID_WRITER ?= 8
 LOCAL_ADAPTER_NO ?= 0
 
 CCFLAGS = -Wall -Wextra -march=native
-NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50 -lineinfo
+NVCCFLAGS = -std=c++11 -fmad=false -arch sm_50
 PTXFLAGS = -warn-double-usage -warn-lmem-usage -warn-spills
 LDFLAGS = -lm -lpthread
 
